@@ -1,94 +1,202 @@
 # CrossSQA
 
-Reusable Playwright + TypeScript QA framework for cross-site UI and API testing.
+Reusable Playwright + TypeScript QA framework for smoke, security, accessibility, and API testing across multiple web applications.
 
-## Structure
+## Overview
 
-- `playwright.config.ts` – browser and viewport matrix
-- `tests/config/site.config.ts` – site adapter and environment-driven config
-- `tests/helpers/qa.ts` – reusable assertions and checks
-- `tests/pages/*` – page objects
-- `tests/fixtures/testData.ts` – data builders for API and UI checks
-- `tests/smoke.spec.ts` – core smoke/regression tests
-- `tests/security.spec.ts` – security and route checks
-- `tests/accessibility.spec.ts` – axe, keyboard, structure, skip-links, contrast, and reduced-motion checks
-- `tests/api.spec.ts` – API contract and regression checks
-- `tests/helpers/auth.ts` – reusable login/logout flow
-- `tests/helpers/api.ts` – reusable API assertion helpers
-- `tests/fixtures/testData.ts` – valid/invalid payload generators
+CrossSQA is a reusable QA automation project designed to validate web apps across:
+- desktop browsers
+- mobile viewports
+- tablet viewports
+- key user journeys
+- security baseline checks
+- accessibility checks
+- API regression coverage
 
-## Required environment
+The framework follows a site-adapter pattern so the test logic stays generic while app-specific values such as routes, selectors, auth flow, and expected content are kept in one configuration layer.
 
-Set the app-specific values before running the suite:
+## Why this project
 
-```bash
-BASE_URL=http://localhost:3000
-LOGIN_PATH=/login
-LOGIN_EMAIL_SELECTOR=#email
-LOGIN_PASSWORD_SELECTOR=#password
-PROTECTED_PATH=/dashboard
-EXPECTED_TITLE_TEXT="My App"
-API_BASE_URL=http://localhost:3000/api
+This project demonstrates practical QA engineering skills in:
+- cross-browser testing
+- responsive UI validation
+- security testing
+- accessibility testing
+- API contract testing
+- reusable test architecture
+- real-world validation against a live public site
+
+## Tech stack
+
+- Playwright
+- TypeScript
+- axe-core
+- Node.js
+
+## Key features
+
+### UI testing
+- smoke and regression coverage
+- page load validation
+- console and page error collection
+- route and navigation checks
+- key heading and text verification
+- login and protected-page checks
+
+### Browser coverage
+- Chromium
+- Firefox
+- WebKit
+- mobile viewport
+- tablet viewport
+
+### Accessibility
+- axe scans
+- form label validation
+- keyboard navigation checks
+- landmark and heading structure checks
+- focus-order validation
+- reduced-motion checks
+- skip-link and contrast checks
+
+### Security
+- security headers validation
+- auth-required route enforcement
+- traversal attempt checks
+- tenant/export/pricing route checks
+- broken route detection
+
+### API testing
+- health checks
+- list/detail endpoint validation
+- create/update/delete coverage
+- invalid payload rejection
+- auth rejection checks
+- pagination and sorting validation
+
+## Architecture
+
+The project is split into logical layers:
+
+- Site adapter config
+- Reusable helpers
+- Page objects
+- Test suites
+
+This keeps the framework flexible and reusable while allowing each app to define its own:
+- base URL
+- protected routes
+- login selectors
+- auth flow
+- expected texts
+- API endpoints
+
+## Project structure
+
+```text
+.
+├── playwright.config.ts
+├── package.json
+├── tsconfig.json
+├── README.md
+├── TECHDOC.md
+├── CHECKLIST.md
+├── ARCHITECTURE.md
+├── PROCESS.md
+├── MASTER_GUIDE.md
+├── tests/
+│   ├── config/
+│   │   └── site.config.ts
+│   ├── helpers/
+│   │   ├── qa.ts
+│   │   ├── auth.ts
+│   │   └── api.ts
+│   ├── pages/
+│   │   ├── BasePage.ts
+│   │   ├── LoginPage.ts
+│   │   └── HomePage.ts
+│   ├── fixtures/
+│   │   └── testData.ts
+│   ├── smoke.spec.ts
+│   ├── security.spec.ts
+│   ├── accessibility.spec.ts
+│   ├── api.spec.ts
+│   └── idavidov.spec.ts
+└── .gitignore
+
 ```
 
-## Must-pass vs site-specific checks
+## Getting started
 
-This suite is intentionally split between universal checks and site-specific adapter values.
+### Install dependencies
 
-- Must-pass checks: smoke, accessibility, security, API contract basics, keyboard and focus flow checks
-- Site-specific checks: route names, expected texts, auth selectors, protected pages, app titles, domain-specific nav/menu behavior
-
-## Example adapter
-
-```ts
-export const siteAdapter = {
-  baseURL: 'http://localhost:3000',
-  expectedTitleText: 'My App',
-  requiredRoutes: [
-    { path: '/', name: 'home', expectedText: ['Welcome'], expectedHeading: 'Home' },
-    { path: '/login', name: 'login', expectedText: ['Login'], expectedHeading: 'Login' },
-  ],
-  loginPage: {
-    path: '/login',
-    emailSelector: '#email',
-    passwordSelector: '#password',
-  },
-  protectedPage: {
-    path: '/dashboard',
-    expectedTitleText: 'Dashboard',
-  },
-  auth: {
-    loginPath: '/login',
-    emailSelector: '#email',
-    passwordSelector: '#password',
-  },
-  api: {
-    baseURL: 'http://localhost:3000/api',
-    healthPath: '/health',
-    listPath: '/users',
-    createPath: '/users',
-  },
-};
+```
+npm install
 ```
 
-## Commands
+### Configure the target app
 
-```bash
+Update the adapter settings in:
+
+```
+tests/config/site.config.ts
+```
+Set values such as:
+
+base URL
+required routes
+auth selectors
+protected routes
+API endpoints
+expected page content
+
+### Run the full suite
+```
 npx playwright test
+```
+### Run specific tests
+```
 npx playwright test tests/smoke.spec.ts
 npx playwright test tests/security.spec.ts
 npx playwright test tests/accessibility.spec.ts
 npx playwright test tests/api.spec.ts
+```
+### Run the live-site example
+```
 npx playwright test tests/idavidov.spec.ts --project=chromium
 ```
+## Real-world validation
+The framework was validated against a public website: https://idavidov.eu
 
-## Live-site validation example
+Outcome:
 
-The framework was validated against `https://idavidov.eu` to confirm it works on a real public site, not only a local mock environment.
+3 checks passed
+1 check failed
 
-Current result on the live site:
+The failing check exposed a real security issue:
 
-- 3/4 checks passed
-- 1 check failed: missing `Content-Security-Policy` and related security headers on the homepage
+missing security headers on the homepage
 
-This is a useful finding because it demonstrates that the suite can catch a real-world security issue and is not only validating placeholder pages.
+This demonstrates that the framework is capable of identifying meaningful production risks rather than only validating a happy-path environment.
+
+## Documentation
+Project documentation is included in:
+
+- TECHDOC.md
+- CHECKLIST.md
+- ARCHITECTURE.md
+- PROCESS.md
+- MASTER_GUIDE.md
+
+## Project status
+Current version: v1.0
+
+This project is designed as a reusable QA foundation that can be adapted to different web applications and used as a strong portfolio piece for QA automation roles.
+
+## License
+For portfolio and demonstration purposes.
+
+## Repository
+GitHub:
+
+https://github.com/Mikikem87/crosssqa-v1
