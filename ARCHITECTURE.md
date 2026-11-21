@@ -62,12 +62,14 @@
  | tests/security.spec.ts                                                                    |
  | tests/accessibility.spec.ts                                                              |
  | tests/api.spec.ts                                                                        |
+ | tests/juice-shop.spec.ts                                                                 |
  |                                                                                          |
  | - core smoke checks                                                                      |
  | - page validation                                                                        |
  | - security headers and auth checks                                                       |
  | - axe and keyboard checks                                                                 |
  | - API contract/regression checks                                                          |
+ | - local Juice Shop adapter checks                                                        |
  +--------------------------------------------+-------------------------------------------+
                                               |
                                               v

@@ -10,6 +10,8 @@
 - [ ] Confirm expected titles and page text are aligned with the app.
 - [ ] Confirm environment variables are set for auth and API endpoints.
 - [ ] Confirm the app server or environment is running before executing UI/API tests.
+- [ ] Confirm any mutation-test target is a disposable test environment before explicitly enabling mutations.
+- [ ] Keep tenant test tokens in environment variables; never commit them.
 
 ## 2. Smoke/regression checks
 
@@ -28,10 +30,11 @@
 - [ ] Run axe scan on key pages.
 - [ ] No critical accessibility issues remain.
 - [ ] Form controls have accessible labels.
-- [ ] Keyboard navigation reaches focusable controls.
+- [ ] Real Tab presses move focus through visible interactive controls.
 - [ ] Page has a main landmark.
 - [ ] Page includes a clear heading structure.
 - [ ] Login form remains keyboard usable.
+- [ ] Treat reduced-motion coverage as browser preference emulation, not proof the app suppresses animation.
 
 ## 4. Security checks
 
@@ -39,22 +42,20 @@
 - [ ] CSP, X-Frame-Options, X-Content-Type-Options, and Referrer-Policy are present.
 - [ ] Unauthenticated users cannot access protected pages.
 - [ ] Unauthenticated users cannot access sensitive API routes.
-- [ ] Route traversal attempts fail safely.
-- [ ] Tenant/export/pricing-related routes are not trivially accessible.
+- [ ] Tenant isolation is verified with separate tenant identities and tenant-owned resources when configured.
+- [ ] Export limits and pricing authorization have explicit app-specific assertions; generic route status alone is not evidence.
 - [ ] Broken routes do not leak application errors.
 
 ## 5. API checks
 
 - [ ] Health endpoint returns success status.
-- [ ] List endpoint returns JSON.
-- [ ] Detail endpoint returns resource or 404 for invalid ID.
-- [ ] Create endpoint accepts valid payloads.
-- [ ] Create endpoint rejects invalid payloads cleanly.
-- [ ] Update endpoint handles partial/full payloads correctly.
-- [ ] Delete endpoint handles missing/invalid IDs gracefully.
-- [ ] Pagination and sorting parameters work or fail safely.
+- [ ] List endpoint returns a JSON array with status 200.
+- [ ] Configured existing detail resource returns 200; configured missing resource returns 404.
+- [ ] Mutation tests use a unique test record and are enabled only on a disposable environment.
+- [ ] Invalid payload rejection is checked separately from successful create.
+- [ ] Pagination size and configured sort order are asserted, not just request acceptance.
 - [ ] Response schema includes required fields.
-- [ ] Auth routes reject unauthenticated requests.
+- [ ] Configured protected API profile rejects unauthenticated requests with 401/403.
 
 ## 6. Browser and viewport coverage
 
@@ -72,6 +73,7 @@
 - [ ] No unauthorized access to protected routes.
 - [ ] No broken route or failed API contract on critical paths.
 - [ ] Results are recorded and linked to the relevant app build or release.
+- [ ] CI typecheck and Playwright test discovery pass; note that these checks do not execute the app-dependent suites.
 
 ## 8. Sign-off
 

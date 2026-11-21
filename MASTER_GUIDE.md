@@ -68,13 +68,16 @@ This gives a strong production-ready baseline without making the suite too rigid
   Core smoke and regression checks.
 
 - `tests/security.spec.ts`  
-  Security checks for headers, auth, traversal, and route protection.
+  Security checks for headers, configured auth behavior, and optional tenant boundaries.
 
 - `tests/accessibility.spec.ts`  
   Axe, form label, and keyboard accessibility checks.
 
 - `tests/api.spec.ts`  
   API contract and regression suite.
+
+- `tests/config/juice-shop.config.ts` and `tests/juice-shop.spec.ts`
+  Isolated, read-only adapter and smoke/API checks for a locally running OWASP Juice Shop.
 
 - `TECHDOC.md`  
   Detailed technical deep dive.
@@ -123,7 +126,6 @@ The smoke suite validates the app’s most critical paths:
 - no failed responses on critical pages
 - expected headings and text appear
 - core page semantics still exist
-- protected routes enforce auth consistently
 - form controls stay keyboard usable
 
 This is the first barrier before deeper checks.
@@ -135,12 +137,12 @@ This is the first barrier before deeper checks.
 The security suite validates:
 
 - presence of security headers
-- login/redirect behavior for protected pages
-- tenant/export/pricing route handling
-- route traversal defenses
+- rejection or configured login redirect for anonymous protected-page access
+- tenant isolation when separate tenant identities and resources are configured
+- explicitly configured site-specific security route contracts
 - broken routes do not reveal internal failures
 
-This protects against common production issues such as auth bypass, missing protections, and unsafe routing.
+Generic status checks do not prove tenant isolation, export limits, or authorization; those require app-specific identities, data, and assertions.
 
 ---
 
@@ -149,12 +151,14 @@ This protects against common production issues such as auth bypass, missing prot
 Accessibility checks include:
 
 - axe scan on public and login pages
-- labels for form controls
-- keyboard navigation support
+- accessible names for form controls
+- real Tab-key navigation checks
 - landmarks and heading structure
-- no critical accessibility violations
+- critical axe violations
+- optional component checks for skip links, live regions, and dialogs
 
 This keeps the suite aligned with modern WCAG-focused quality expectations.
+The reduced-motion test verifies browser preference emulation only; it does not prove that every application animation responds to that preference.
 
 ---
 
@@ -163,16 +167,15 @@ This keeps the suite aligned with modern WCAG-focused quality expectations.
 API tests validate:
 
 - health endpoint availability
-- list endpoint JSON contract
-- detail endpoint handling
-- valid and invalid create payloads
-- update behavior
-- delete behavior
-- pagination and sorting safety
-- auth rejection on protected routes
-- required response fields
+- list endpoint JSON array contract
+- existing and explicitly configured missing detail resources
+- unauthenticated rejection on a configured protected API route
+- configured pagination limits and actual sort order
+- opt-in CRUD lifecycle using a unique resource and cleanup
+- invalid payload rejection
 
 This reduces the risk of broken contracts and stale assumptions in server-side behavior.
+Mutation tests require explicit confirmation of the API base URL and should only run on a disposable test environment.
 
 ---
 
@@ -192,7 +195,7 @@ This catches issues that appear only on different browsers or responsive layouts
 
 ## QA process flow
 
-The recommended execution order is:
+The recommended manual triage order is:
 
 1. Configure the adapter
 2. Validate environment and app availability
@@ -204,6 +207,7 @@ The recommended execution order is:
 8. Make release recommendation
 
 The process is documented in `PROCESS.md`.
+Playwright uses `fullyParallel: true`; running the full suite does not enforce this sequence.
 
 ---
 
@@ -260,6 +264,8 @@ npx playwright test tests/security.spec.ts
 npx playwright test tests/accessibility.spec.ts
 npx playwright test tests/api.spec.ts
 ```
+
+The GitHub Actions workflow runs TypeScript type checking and Playwright test discovery only. It does not execute app-dependent tests.
 
 ---
 

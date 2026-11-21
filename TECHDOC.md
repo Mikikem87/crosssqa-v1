@@ -32,8 +32,14 @@ The project has four main layers:
 - `playwright.config.ts`  
   Browser matrix and base runtime configuration.
 
+- `.github/workflows/ci.yml`
+  Continuous integration type-checks TypeScript and verifies Playwright test discovery. It does not execute tests against an application.
+
 - `tests/config/site.config.ts`  
   Global adapter object with site requirements and environment overrides.
+
+- `tests/config/juice-shop.config.ts`
+  Isolated configuration for the locally running OWASP Juice Shop spec.
 
 - `tests/helpers/qa.ts`  
   General-purpose UI assertions such as console error collection, route checks, keyboard validation, and accessibility helpers.
@@ -60,13 +66,16 @@ The project has four main layers:
   Regression and smoke tests for critical paths.
 
 - `tests/security.spec.ts`  
-  Security-focused checks: headers, auth redirects, traversal attempts, route protection.
+  Security-focused checks: headers, configured auth rejection, and optional tenant boundaries.
 
 - `tests/accessibility.spec.ts`  
   Accessibility checks using axe and keyboard navigation validation.
 
 - `tests/api.spec.ts`  
   API contract and regression tests for auth, CRUD, pagination, and invalid-input handling.
+
+- `tests/juice-shop.spec.ts`
+  Read-only Juice Shop UI smoke and product-search API contract checks.
 
 ---
 
@@ -80,7 +89,7 @@ The framework runs a browser matrix defined in `playwright.config.ts`:
 - mobile-chrome
 - tablet-ipad
 
-This provides a broad cross-browser and device coverage level without duplicating test logic. The same tests run across desktop and mobile/tablet viewports to catch responsive and browser-specific regressions.
+This provides broad cross-browser and device coverage without duplicating test logic. `fullyParallel: true` means tests may run concurrently across projects; the recommended workflow in `PROCESS.md` is a manual triage order, not an enforced sequential pipeline.
 
 ---
 
@@ -126,11 +135,13 @@ The same idea is used for API config:
 - `healthPath`
 - `listPath`
 - `detailPath`
+- optional `missingDetailPath`
 - `createPath`
-- `updatePath`
-- `deletePath`
-- `authPath`
 - `profilePath`
+- `resourcePathTemplate`
+- explicit mutation opt-in and expected create/update/delete statuses
+- optional pagination/sorting contract
+- optional tenant A/B tokens and owned resource paths
 
 This lets the suite test different apps or APIs without changing the test logic itself.
 
@@ -140,10 +151,11 @@ This lets the suite test different apps or APIs without changing the test logic 
 
 ### `gotoAndCollectErrors()`
 Purpose:
-- Open a route
+- Resolve an absolute or relative route using the configured base URL and open it
 - Capture JS console errors
 - Capture page-level exceptions
 - Capture failed HTTP responses (4xx/5xx)
+- Remove its event listeners after navigation so results do not leak between checks
 
 Why it matters:
 - A page may render successfully but still be broken due to client-side script failures or failed API calls.
@@ -156,7 +168,7 @@ Purpose:
 What it checks:
 - missing labels
 - bad landmarks
-- focus issues
+- ARIA and semantic issues
 - contrast and structural accessibility issues
 
 ### `assertNoCriticalA11yIssues()`
@@ -165,24 +177,24 @@ Purpose:
 
 ### `assertFormLabels()`
 Purpose:
-- Ensure each form control has a label or accessible name.
+- Ensure data-entry controls have an accessible name.
 
 What it validates:
 - `label[for="..."]` associations
 - `aria-label`
 - `aria-labelledby`
-- `name` attribute as fallback
+- `title` as a last-resort name
+- Does not count the `name` attribute or placeholder by itself as a label
 
 ### `assertKeyboardNavigation()`
 Purpose:
-- Ensure interactive elements receive focus when tabbing.
+- Send real Tab key presses and verify focus advances through visible interactive elements.
 
-Why it matters:
-- Keyboard access is essential for accessibility and general usability.
+Scope: this checks basic Tab-key movement. It does not prove complete focus order correctness or absence of every possible keyboard trap.
 
 ### `assertSecurityHeaders()`
 Purpose:
-- Validate presence of important security headers such as:
+- Validate configured response headers without navigating or reloading the page. Common examples:
   - Content-Security-Policy
   - X-Frame-Options
   - X-Content-Type-Options
@@ -194,7 +206,12 @@ Purpose:
 
 ### `assertRouteContent()`
 Purpose:
-- Open a route and validate configured text and expected heading.
+- Validate configured text and expected heading on the current page; it does not navigate.
+
+### `resolveRouteUrl()`
+Purpose:
+- Resolve route URLs against the site adapter's `baseURL`.
+- Reject malformed base URLs and avoid treating `about:blank` as a navigation base.
 
 ### `expectJsonResponse()`
 Purpose:
@@ -261,186 +278,90 @@ What it checks:
 - there are no obvious structural issues in page layout
 - login page has email and password inputs visible
 
-### Test: protected routes require auth and routing is stable
-Purpose:
-- Ensure authenticated-only routes are not exposed unintentionally.
-
-What it checks:
-- not a generic error page
-- response status is not a server error
-- route does not expose broken or failing content
-
 ### Test: critical form fields and keyboard navigation are usable
 Purpose:
 - Ensure the most critical form is usable without a mouse.
 
 What it checks:
-- keyboard focus works on interactive controls
-- important app headers are present
-- security headers exist on the page
+- login page configured fields are visible
+- real Tab key presses move through visible interactive controls
 
 ---
 
 ## Security Tests (`tests/security.spec.ts`)
 
-### Test: security headers are present on public pages
+### Test: configured security headers are present
 Purpose:
-- Validate that the app sends baseline security headers.
+- Validate the headers configured for the target site's homepage response.
 
 What it checks:
-- Content-Security-Policy
-- X-Frame-Options
-- X-Content-Type-Options
-- Referrer-Policy
+- each configured header is present
+- the response is captured once; this check does not reload the page
 
 Security relevance:
 - Missing headers often indicate a production security gap even when UI appears normal.
 
-### Test: unauthenticated access is blocked or redirected
+### Test: anonymous protected-page access is rejected
 Purpose:
 - Confirm protected pages are not accessible without auth.
 
 What it checks:
-- redirects to login or auth pages
-- 401/403 responses
-- refusal of anonymous access to sensitive routes
+- an HTTP 401/403 response, or
+- a redirect to the adapter's configured login page
+- a generic `/error` URL or any arbitrary success status is not accepted as proof
 
-### Test: tenant-scoped and export endpoints are not trivially accessible
+### Test: optional tenant isolation
 Purpose:
-- Validate common multi-tenant and sensitive data paths are not publicly accessible.
+- Verify tenant boundaries only when two distinct test credentials and known tenant-owned resources are configured.
 
 What it checks:
-- routes like tenant/export/pricing-related pages are not directly open to unauthenticated users
-- allowed responses are redirect/401/403, not direct success
+- each bearer identity can read its own resource (200)
+- neither identity can read the other tenant's resource (403 or 404)
 
-### Test: routing checks do not reveal critical failures
+Without all four `TENANT_A_TOKEN`, `TENANT_A_RESOURCE_PATH`, `TENANT_B_TOKEN`, and `TENANT_B_RESOURCE_PATH` values, the test is skipped. A generic route status test does not claim tenant isolation or export-limit coverage.
+
+### Test: explicit site-specific security route contracts
+Optional routes must define an exact expected status list in the site adapter. This verifies only that configured response contract; it does not prove authorization unless the expected behavior and credentials make that assertion meaningful.
+
+### Test: critical routes do not return broken responses
+
 Purpose:
 - Check all critical routes for error signals.
-
-### Test: route traversal payloads do not resolve to real pages
-Purpose:
-- Validate path traversal attempts fail without reaching app routes.
-
-What it checks:
-- attempts such as `../admin`, encoded traversal variants, and double-dot payloads
-
-Security relevance:
-- This is a common vulnerability class and should be part of a standard regression pack.
 
 ---
 
 ## Accessibility Tests (`tests/accessibility.spec.ts`)
 
-### Test: homepage and auth page have no critical axe issues
-Purpose:
-- Run axe against the main public page and login page.
+The homepage and login axe scans run as separate tests, so a failure in one does not prevent the other scan.
 
-What it checks:
-- missing labels
-- broken landmark structure
-- input accessibility issues
-- focus and semantic problems
-
-### Test: forms have labels and keyboard focus is visible
-Purpose:
-- Validate labeled controls and keyboard usability.
-
-What it checks:
-- field labels via HTML labels or aria attributes
-- focus remains stable on keyboard interaction
-
-### Test: headers and landmarks are present
-Purpose:
-- Ensure pages have semantic page structure.
-
-What it checks:
-- `main` or `[role="main"]`
-- at least one heading (`h1` or `h2`)
+- Form fields must have an associated label, `aria-label`, `aria-labelledby`, or title. A `name` attribute or placeholder alone does not count.
+- Keyboard checks press the real Tab key and confirm visible interactive controls receive focus. This is a basic progression check, not a proof of all focus-order rules or every keyboard trap.
+- Landmark and heading checks require a main landmark and a heading structure.
+- Skip-link, live-region, and dialog checks validate behavior/semantics when those components exist; those cases are skipped when the page has no such component.
+- Reduced-motion coverage verifies Playwright can emulate the user preference. It does not claim to verify every app animation responds correctly.
+- The custom contrast heuristic was removed because it made unreliable assumptions about transparent and layered backgrounds. Axe remains the automated accessibility scanner; manual review is still required.
 
 ---
 
 ## API Tests (`tests/api.spec.ts`)
 
-### Test: health endpoint responds successfully
-Purpose:
-- Confirm service health is green.
+The API suite asserts expected behavior rather than accepting a broad set of potentially incorrect statuses.
 
-What it checks:
-- status code 200 or 204
-- service is reachable
+- Health: only 200/204 is successful.
+- List: requires status 200, JSON content type, and an actual array in the response (or configured items path).
+- Detail: configured existing resource must return 200 and an identifier. A separate configured missing path must return 404.
+- Authentication: an explicitly configured protected profile path must return 401/403 without credentials.
+- Pagination: optional adapter config supplies query parameter names, page size, sort field/order, and optional item path. The test verifies the limit and actual sorted order; it skips if not configured.
+- Mutation lifecycle: create uses a UUID email; update/read-back/delete use the created resource ID; cleanup is attempted if later assertions fail.
+- Invalid create: expects 400/422 and attempts cleanup if the API unexpectedly accepts the payload and returns an ID.
 
-### Test: list endpoint returns a valid JSON payload
-Purpose:
-- Validate the collection endpoint contract.
-
-What it checks:
-- successful response
-- content type is JSON
-- body is returned and is parseable
-
-### Test: detail endpoint returns a single resource or 404 for missing IDs
-Purpose:
-- Confirm detail endpoint behavior for valid and invalid IDs.
-
-What it checks:
-- 200 for valid resource
-- 404 for missing resource
-- required response fields exist when resource is returned
-
-### Test: create endpoint accepts valid payloads and rejects invalid ones
-Purpose:
-- Validate create contract behavior.
-
-What it checks:
-- valid payload can create a record
-- invalid payload is rejected with 400/422
-- required fields are present in successful responses
-
-### Test: update endpoint handles partial or full payloads safely
-Purpose:
-- Validate update contract behavior without allowing unsafe assumptions.
-
-What it checks:
-- valid update request succeeds or returns appropriate status
-- invalid update request fails cleanly
-
-### Test: delete endpoint handles invalid or missing IDs gracefully
-Purpose:
-- Validate deletion semantics and error handling.
-
-What it checks:
-- 200/204 for valid delete
-- 404/403/401 for invalid or unauthorized delete attempts
-
-### Test: unauthenticated access is rejected on protected API routes
-Purpose:
-- Ensure sensitive API endpoints are protected.
-
-What it checks:
-- unauthenticated requests are rejected
-
-### Test: pagination and sorting parameters do not break the API contract
-Purpose:
-- Validate parameter handling for list endpoints.
-
-What it checks:
-- page, limit, sort, and order parameters do not break response parsing
-- accepted or rejected with proper status handling
-
-### Test: seed data fixtures cover standard user variants and role boundaries
-Purpose:
-- Ensure test data covers realistic values and role variants.
-
-What it checks:
-- fixtures are valid
-- data includes at least one admin role
-- email format is valid
+Create/update/delete and invalid-create tests are skipped unless `ALLOW_API_MUTATIONS=true` and `API_MUTATION_TARGET` exactly matches the configured API base URL. Enable them only against a disposable test environment. Create defaults to 201, update to 200/204, and delete to 200/204; customize these statuses in the adapter if the API contract differs.
 
 ---
 
 ## Fixtures and Test Data
 
-The fixture layer provides reusable datasets for tests. It keeps tests deterministic and avoids inline hardcoded values that are difficult to maintain.
+The fixture layer provides reusable valid and invalid payload builders. The mutating lifecycle generates a unique email address for each run to avoid collisions between workers and browser projects.
 
 ### `buildUser()`
 Creates a valid user object with defaults that can be overridden.
@@ -448,10 +369,7 @@ Creates a valid user object with defaults that can be overridden.
 ### `buildInvalidUser()`
 Creates a deliberately invalid object to test validation flows.
 
-### `testUsers`
-A small array of realistic user fixtures used for role and input validation tests.
-
-This improves API contract tests by allowing a consistent set of valid and invalid payloads.
+The valid create payload uses a unique address per run to avoid collisions between workers and browser projects.
 
 ---
 
@@ -489,11 +407,10 @@ This suite is designed to catch the following categories of regressions:
 - missing labels and inaccessible forms
 - keyboard-only navigation failures
 - missing security headers
-- unauthenticated access
-- tenant isolation weaknesses
-- path traversal and route exposure issues
+- anonymous access to configured protected pages
+- tenant isolation failures when the required two-tenant configuration is provided
 - malformed or incomplete API payload handling
-- pagination and sorting issues
+- configured pagination and sorting contract failures
 - auth and CRUD contract drift
 
 ---

@@ -12,6 +12,8 @@ Before starting the test run, confirm:
 
 This should be captured in the site adapter config so the test suite remains generic.
 
+The standard Playwright configuration uses `fullyParallel: true`. The phases below are a recommended manual triage order, not an automatic sequential pipeline: `npx playwright test` runs tests concurrently across the browser/device projects.
+
 ---
 
 ## 2. Configure the adapter
@@ -57,9 +59,10 @@ Goal:
 Smoke suite includes:
 - home page loads
 - login page loads
-- protected routes behave consistently
 - forms and inputs are present
 - route content and headings are visible
+
+Protected-page access behavior is checked separately in the security suite.
 
 If smoke tests fail, stop and fix the app or config before continuing.
 
@@ -71,13 +74,12 @@ After smoke passes, run the security suite.
 
 Focus areas:
 - missing security headers
-- unauthenticated access to protected pages
-- unauthorized API access
-- tenant-isolation related endpoints
-- route traversal or path manipulation vulnerabilities
+- unauthenticated access to protected pages and explicitly configured API routes
+- tenant isolation only when separate tenant identities and owned resources are configured
+- application-specific export/pricing authorization rules
 - broken routes exposing internal errors
 
-This stage answers: "Can an attacker reach or misuse the app in a straightforward way?"
+Generic route status checks do not prove tenant isolation, export limits, or authorization. Add app-specific test identities, data, and expected outcomes for those claims.
 
 ---
 
@@ -88,11 +90,12 @@ Run the accessibility checks next.
 Focus areas:
 - axe violations
 - form labels and accessible names
-- keyboard navigation
+- real Tab-key movement
 - page landmarks and headings
-- contrast, semantics, and focus issues
+- axe-detected contrast and semantic issues
+- optional component checks for skip links, live regions, and dialogs
 
-This stage answers: "Is the app usable and understandable for keyboard and assistive technology users?"
+The reduced-motion test only verifies that the browser preference can be emulated; verify application animation behavior separately where needed.
 
 ---
 
@@ -106,9 +109,10 @@ Focus areas:
 - detail endpoint behavior
 - create and update validation
 - delete behavior
-- pagination and sorting
-- auth enforcement on protected API routes
+- configured pagination size and sorted order
+- auth rejection on configured protected API routes
 - JSON shape validation
+- opt-in CRUD against a disposable environment only
 
 This stage answers: "Does the application contract behave as expected under valid and invalid inputs?"
 
@@ -168,6 +172,8 @@ Typical blockers:
 ---
 
 ## 11. Example execution order
+
+The following commands are useful for manually triaging failures in phases. They do not change Playwright's parallel behavior when the full suite is run.
 
 ```bash
 # 1. config and environment

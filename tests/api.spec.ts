@@ -1,115 +1,194 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { getSiteConfig } from './config/site.config';
-import { buildInvalidUser, buildUser, testUsers } from './fixtures/testData';
-import { expectJsonResponse, expectSchemaShape } from './helpers/api';
+import { buildInvalidUser, buildUser } from './fixtures/testData';
 
 const config = getSiteConfig();
-
 const jsonContentType = /application\/json/i;
 
 function getUrl(path: string) {
-  return `${config.api.baseURL}${path}`;
+  return `${config.api.baseURL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
-test.describe('generic API regression checks', () => {
-  test('health endpoint responds successfully', async ({ request }) => {
-    // Health check is the fastest possible signal that the service and infrastructure are alive.
-    const response = await request.get(getUrl(config.api.healthPath ?? '/health'));
+function getRecord(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('Expected the API response to contain a JSON object.');
+  }
+  const record = body as Record<string, unknown>;
+  const data = record.data;
+  return data && typeof data === 'object' && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : record;
+}
 
-    expect(response.ok()).toBeTruthy();
+function getResourceId(body: unknown): string {
+  const record = getRecord(body);
+  const id = record.id ?? record.userId ?? record.uuid;
+  if (id === undefined || id === null || String(id).length === 0) {
+    throw new Error('The API response did not include a resource identifier.');
+  }
+  return String(id);
+}
+
+function getCollection(body: unknown, itemsPath?: string): unknown[] {
+  let value: unknown = body;
+  if (itemsPath) {
+    for (const key of itemsPath.split('.')) {
+      value = value && typeof value === 'object'
+        ? (value as Record<string, unknown>)[key]
+        : undefined;
+    }
+  } else if (body && typeof body === 'object' && !Array.isArray(body)) {
+    const record = body as Record<string, unknown>;
+    value = record.data ?? record.items;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error('Expected the list API response to contain an array.');
+  }
+  return value;
+}
+
+function getResourceUrl(id: string) {
+  const template = config.api.resourcePathTemplate;
+  if (!template?.includes('{id}')) {
+    throw new Error('API_RESOURCE_PATH_TEMPLATE must contain the {id} placeholder for mutation tests.');
+  }
+  return getUrl(template.replace('{id}', encodeURIComponent(id)));
+}
+
+test.describe('API contract and regression checks', () => {
+  test('health endpoint responds with a successful status', async ({ request }) => {
+    const response = await request.get(getUrl(config.api.healthPath ?? '/health'));
     expect([200, 204]).toContain(response.status());
   });
 
-  test('list endpoint returns a valid JSON payload', async ({ request }) => {
-    // The list contract should validate both status code and response structure, not only the happy path.
+  test('list endpoint returns a JSON array', async ({ request }) => {
     const response = await request.get(getUrl(config.api.listPath ?? '/users'));
-    const body = await response.json().catch(() => null);
-
-    expect(response.ok()).toBeTruthy();
-    expect(response.headers()['content-type']).toMatch(jsonContentType);
-    expect(body).toBeTruthy();
-    const collection = body?.data ?? body?.items ?? body;
-    if (Array.isArray(collection)) {
-      expect(collection.length).toBeGreaterThanOrEqual(0);
-    }
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type'] ?? '').toMatch(jsonContentType);
+    const body = await response.json();
+    expect(Array.isArray(getCollection(body))).toBeTruthy();
   });
 
-  test('detail endpoint returns a single resource or 404 for missing IDs', async ({ request }) => {
+  test('configured detail endpoint returns an existing resource', async ({ request }) => {
     const response = await request.get(getUrl(config.api.detailPath ?? '/users/1'));
-
-    expect([200, 404]).toContain(response.status());
-    if (response.status() === 200) {
-      const body = await response.json();
-      expect(body).toBeTruthy();
-      expect(body.id ?? body.userId ?? body.uuid).toBeTruthy();
-      await expectSchemaShape(body, ['id', 'name', 'email']);
-    }
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type'] ?? '').toMatch(jsonContentType);
+    const body = getRecord(await response.json());
+    expect(body.id ?? body.userId ?? body.uuid, 'Resource response must expose an identifier').toBeTruthy();
   });
 
-  test('create endpoint accepts valid payloads and rejects invalid ones', async ({ request }) => {
-    const validPayload = buildUser({ email: 'valid.api.user@example.com' });
-    const invalidPayload = buildInvalidUser();
-
-    const validResponse = await request.post(getUrl(config.api.createPath ?? '/users'), { data: validPayload });
-    const validBody = await validResponse.json().catch(() => null);
-
-    expect([200, 201, 400, 409]).toContain(validResponse.status());
-    if (validResponse.ok()) {
-      expect(validBody).toBeTruthy();
-      expect(validBody.id ?? validBody.userId).toBeTruthy();
-      await expectSchemaShape(validBody, ['id', 'name', 'email']);
-    }
-
-    const invalidResponse = await request.post(getUrl(config.api.createPath ?? '/users'), { data: invalidPayload });
-    const invalidBody = await invalidResponse.json().catch(() => null);
-
-    expect([400, 422]).toContain(invalidResponse.status());
-    if (invalidBody) {
-      expect(JSON.stringify(invalidBody)).toMatch(/name|email|required|invalid/i);
-    }
+  test('configured missing detail endpoint returns 404', async ({ request }) => {
+    test.skip(!config.api.missingDetailPath, 'Set API_MISSING_DETAIL_PATH to a known non-existent resource.');
+    const response = await request.get(getUrl(config.api.missingDetailPath!));
+    expect(response.status()).toBe(404);
   });
 
-  test('update endpoint handles partial or full payloads safely', async ({ request }) => {
-    const updateUrl = getUrl(config.api.updatePath ?? '/users/1');
-    const response = await request.patch(updateUrl, {
-      data: { name: 'Updated QA User' },
+  test('protected API profile rejects unauthenticated access', async ({ request }) => {
+    test.skip(!config.api.profilePath, 'Set API_PROFILE_PATH to an endpoint that requires authentication.');
+    const response = await request.get(getUrl(config.api.profilePath!));
+    expect([401, 403]).toContain(response.status());
+  });
+
+  test('configured pagination respects the requested limit and sort order', async ({ request }) => {
+    const pagination = config.api.pagination;
+    test.skip(!pagination, 'Configure pagination parameters, page size, sort field, and order for this API.');
+
+    const url = new URL(getUrl(config.api.listPath ?? '/users'));
+    url.searchParams.set(pagination!.pageParameter, '1');
+    url.searchParams.set(pagination!.pageSizeParameter, String(pagination!.pageSize));
+    url.searchParams.set(pagination!.sortParameter, pagination!.sortField);
+    url.searchParams.set(pagination!.orderParameter, pagination!.order);
+
+    const response = await request.get(url.toString());
+    expect(response.status()).toBe(200);
+    const items = getCollection(await response.json(), pagination!.itemsPath);
+    expect(items.length, 'The endpoint must not exceed the requested page size').toBeLessThanOrEqual(pagination!.pageSize);
+    expect(items.length, 'At least two records are needed to verify sort order').toBeGreaterThanOrEqual(2);
+
+    const values = items.map((item) => {
+      if (!item || typeof item !== 'object') {
+        throw new Error('Expected each paginated item to be an object.');
+      }
+      const value = (item as Record<string, unknown>)[pagination!.sortField];
+      if (value === undefined || value === null) {
+        throw new Error(`The configured sort field "${pagination!.sortField}" is absent from an item.`);
+      }
+      return value;
     });
 
-    expect([200, 204, 400, 404, 403, 401]).toContain(response.status());
-  });
-
-  test('delete endpoint handles invalid or missing IDs gracefully', async ({ request }) => {
-    const deleteUrl = getUrl(config.api.deletePath ?? '/users/1');
-    const response = await request.delete(deleteUrl);
-
-    expect([200, 204, 400, 401, 403, 404]).toContain(response.status());
-  });
-
-  test('unauthenticated access is rejected on protected API routes', async ({ request }) => {
-    // API security is as important as UI security; an unauthenticated caller should never be able to reach sensitive endpoints.
-    const protectedPaths = [config.api.profilePath ?? '/users/me', config.api.authPath ?? '/auth/login'];
-
-    for (const path of protectedPaths) {
-      const response = await request.get(getUrl(path));
-      expect([200, 302, 401, 403]).toContain(response.status());
+    for (let i = 1; i < values.length; i += 1) {
+      const previous = values[i - 1];
+      const current = values[i];
+      const comparison = typeof previous === 'number' && typeof current === 'number'
+        ? previous - current
+        : String(previous).localeCompare(String(current));
+      expect(pagination!.order === 'asc' ? comparison <= 0 : comparison >= 0).toBeTruthy();
     }
   });
 
-  test('pagination and sorting parameters do not break the API contract', async ({ request }) => {
-    const response = await request.get(`${getUrl(config.api.listPath ?? '/users')}?page=1&limit=10&sort=name&order=asc`);
-    const body = await response.json().catch(() => null);
+  test('create, update, and delete use a unique resource and clean it up', async ({ request }) => {
+    test.skip(!config.api.mutationsEnabled, 'Set ALLOW_API_MUTATIONS=true and API_MUTATION_TARGET to the exact API base URL of a disposable test environment.');
 
-    expect([200, 400]).toContain(response.status());
-    if (response.status() === 200 && body) {
-      const collection = body.data ?? body.items ?? body;
-      expect(collection).toBeTruthy();
-      await expectJsonResponse(response, [200]);
+    const email = `crosssqa-${randomUUID()}@example.test`;
+    const createResponse = await request.post(getUrl(config.api.createPath ?? '/users'), {
+      data: buildUser({ email }),
+    });
+    const createBody = createResponse.ok() ? await createResponse.json().catch(() => null) : null;
+    let resourceId: string | undefined;
+    let resourceUrl: string | undefined;
+    let deleted = false;
+
+    try {
+      if (createBody) {
+        resourceId = getResourceId(createBody);
+        resourceUrl = getResourceUrl(resourceId);
+      }
+      expect(config.api.createdStatuses).toContain(createResponse.status());
+      expect(resourceId, 'Create response must include the newly created resource ID').toBeTruthy();
+
+      const updateResponse = await request.patch(resourceUrl!, {
+        data: { name: 'CrossSQA Updated QA User' },
+      });
+      expect(config.api.updatedStatuses).toContain(updateResponse.status());
+
+      const readBackResponse = await request.get(resourceUrl!);
+      expect(readBackResponse.status()).toBe(200);
+      const readBackBody = getRecord(await readBackResponse.json());
+      expect(readBackBody.name).toBe('CrossSQA Updated QA User');
+
+      const deleteResponse = await request.delete(resourceUrl!);
+      expect(config.api.deletedStatuses).toContain(deleteResponse.status());
+      deleted = true;
+    } finally {
+      if (resourceUrl && !deleted) {
+        const cleanupResponse = await request.delete(resourceUrl);
+        expect(
+          config.api.deletedStatuses,
+          `Cleanup failed for generated resource ${resourceId}`,
+        ).toContain(cleanupResponse.status());
+      }
     }
   });
 
-  test('seed data fixtures cover standard user variants and role boundaries', async () => {
-    expect(testUsers.length).toBeGreaterThan(0);
-    expect(testUsers.every((user) => user.email.includes('@'))).toBeTruthy();
-    expect(testUsers.some((user) => user.role === 'admin')).toBeTruthy();
+  test('invalid create payload is rejected without creating a resource', async ({ request }) => {
+    test.skip(!config.api.mutationsEnabled, 'Set ALLOW_API_MUTATIONS=true and API_MUTATION_TARGET to the exact API base URL of a disposable test environment.');
+
+    const response = await request.post(getUrl(config.api.createPath ?? '/users'), { data: buildInvalidUser() });
+    const body = response.ok() ? await response.json().catch(() => null) : null;
+    let createdResourceUrl: string | undefined;
+    try {
+      if (body) {
+        createdResourceUrl = getResourceUrl(getResourceId(body));
+      }
+      expect([400, 422]).toContain(response.status());
+    } finally {
+      if (createdResourceUrl) {
+        const cleanupResponse = await request.delete(createdResourceUrl);
+        expect(config.api.deletedStatuses, 'Cleanup of unexpectedly accepted invalid data failed')
+          .toContain(cleanupResponse.status());
+      }
+    }
   });
 });

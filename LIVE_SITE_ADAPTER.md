@@ -1,74 +1,24 @@
-# Live Site Adapter Example
+# Live Site Example: idavidov.eu
 
-This document shows how the generic framework is adapted to a concrete site: `https://idavidov.eu`.
+The public-site example is isolated in `tests/idavidov.spec.ts`; it does not replace the generic adapter in `tests/config/site.config.ts` or claim that the site has login, protected routes, or an API under test.
 
-## Adapter config
+## Covered checks
 
-```ts
-export const siteAdapter = {
-  baseURL: 'https://idavidov.eu',
-  expectedTitleText: 'idavidov.eu',
-  requiredRoutes: [
-    {
-      path: '/',
-      name: 'home',
-      expectedText: ['Latest articles', 'REST API Testing'],
-      expectedHeading: 'Latest articles',
-    },
-    {
-      path: '/rest-api-testing-guide',
-      name: 'article',
-      expectedText: ['REST API Testing', 'HTTP Methods'],
-      expectedHeading: 'REST API Testing: What Every QA Engineer Must Know',
-    },
-  ],
-  loginPage: {
-    path: '/login',
-    emailSelector: '#email',
-    passwordSelector: '#password',
-    submitSelector: 'button[type="submit"]',
-  },
-  protectedPage: {
-    path: '/dashboard',
-    expectedTitleText: 'Dashboard',
-  },
-  securityHeaders: [
-    'content-security-policy',
-    'x-frame-options',
-    'x-content-type-options',
-    'referrer-policy',
-  ],
-  auth: {
-    loginPath: '/login',
-    emailSelector: '#email',
-    passwordSelector: '#password',
-  },
-  api: {
-    baseURL: 'https://idavidov.eu/api',
-    healthPath: '/health',
-    listPath: '/posts',
-    detailPath: '/posts/1',
-    createPath: '/posts',
-    updatePath: '/posts/1',
-    deletePath: '/posts/1',
-    authPath: '/auth/login',
-    profilePath: '/profile',
-  },
-};
+- homepage and article route content
+- console/page errors and failed HTTP responses
+- homepage security headers
+- homepage axe scan, executed in a separate test from header validation
+- real Tab-key navigation
+
+## Scope and limitations
+
+- The example is an unauthenticated public-site smoke/accessibility/security-header check.
+- It does not validate API behavior, login, tenant isolation, export limits, or pricing authorization.
+- Missing headers observed in a historical run should be rechecked before being reported as a current finding.
+- The Tab check demonstrates basic focus movement; it is not a complete accessibility audit.
+
+Run it with:
+
+```bash
+npx playwright test tests/idavidov.spec.ts --project=chromium
 ```
-
-## Live test coverage used
-
-The live test file validates:
-
-- homepage loads without console errors
-- article page loads without console errors
-- no critical axe violations
-- keyboard navigation works
-- security headers are present
-
-The real site validation also exposed a finding:
-
-- homepage is missing a CSP / frame / content-type security header
-
-This is exactly the type of finding the regression framework is meant to surface.

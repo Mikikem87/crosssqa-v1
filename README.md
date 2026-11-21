@@ -1,202 +1,134 @@
 # CrossSQA
 
-Reusable Playwright + TypeScript QA framework for smoke, security, accessibility, and API testing across multiple web applications.
+Reusable Playwright + TypeScript framework for UI smoke/regression, security baselines, accessibility, and API contract testing across web applications.
 
-## Overview
+## What it demonstrates
 
-CrossSQA is a reusable QA automation project designed to validate web apps across:
-- desktop browsers
-- mobile viewports
-- tablet viewports
-- key user journeys
-- security baseline checks
-- accessibility checks
-- API regression coverage
+- Adapter-driven test design that keeps application routes and selectors out of generic assertions
+- UI, API, security, and accessibility coverage with Playwright and axe-core
+- Chromium, Firefox, WebKit, mobile, and tablet project configuration
+- Explicitly scoped assertions that distinguish verified behavior from site-specific checks
+- CI type checking and Playwright test discovery
 
-The framework follows a site-adapter pattern so the test logic stays generic while app-specific values such as routes, selectors, auth flow, and expected content are kept in one configuration layer.
+## Test coverage
 
-## Why this project
+| Suite | Coverage |
+| --- | --- |
+| Smoke | Configured route loading, page/console errors, failed responses, headings, and login form visibility |
+| Security | Configured response headers, anonymous protected-page rejection/redirect, explicit route contracts, optional two-tenant resource isolation |
+| Accessibility | Separate axe scans, accessible form names, real Tab-key movement, landmarks, optional skip links/live regions/dialogs, reduced-motion browser emulation |
+| API | Health, JSON collection shape, configured existing/missing detail resources, optional auth rejection, configured pagination/sorting, opt-in CRUD lifecycle |
 
-This project demonstrates practical QA engineering skills in:
-- cross-browser testing
-- responsive UI validation
-- security testing
-- accessibility testing
-- API contract testing
-- reusable test architecture
-- real-world validation against a live public site
-
-## Tech stack
-
-- Playwright
-- TypeScript
-- axe-core
-- Node.js
-
-## Key features
-
-### UI testing
-- smoke and regression coverage
-- page load validation
-- console and page error collection
-- route and navigation checks
-- key heading and text verification
-- login and protected-page checks
-
-### Browser coverage
-- Chromium
-- Firefox
-- WebKit
-- mobile viewport
-- tablet viewport
-
-### Accessibility
-- axe scans
-- form label validation
-- keyboard navigation checks
-- landmark and heading structure checks
-- focus-order validation
-- reduced-motion checks
-- skip-link and contrast checks
-
-### Security
-- security headers validation
-- auth-required route enforcement
-- traversal attempt checks
-- tenant/export/pricing route checks
-- broken route detection
-
-### API testing
-- health checks
-- list/detail endpoint validation
-- create/update/delete coverage
-- invalid payload rejection
-- auth rejection checks
-- pagination and sorting validation
+Some checks need application-specific settings. Tenant isolation requires two separate bearer tokens and tenant-owned resource paths. Mutation tests are skipped unless the disposable API target is explicitly confirmed. A generic status check alone is not treated as proof of tenant isolation, authorization, or export limits.
 
 ## Architecture
 
-The project is split into logical layers:
-
-- Site adapter config
-- Reusable helpers
-- Page objects
-- Test suites
-
-This keeps the framework flexible and reusable while allowing each app to define its own:
-- base URL
-- protected routes
-- login selectors
-- auth flow
-- expected texts
-- API endpoints
-
-## Project structure
-
 ```text
-.
-├── playwright.config.ts
-├── package.json
-├── tsconfig.json
-├── README.md
-├── TECHDOC.md
-├── CHECKLIST.md
-├── ARCHITECTURE.md
-├── PROCESS.md
-├── MASTER_GUIDE.md
-├── tests/
-│   ├── config/
-│   │   └── site.config.ts
-│   ├── helpers/
-│   │   ├── qa.ts
-│   │   ├── auth.ts
-│   │   └── api.ts
-│   ├── pages/
-│   │   ├── BasePage.ts
-│   │   ├── LoginPage.ts
-│   │   └── HomePage.ts
-│   ├── fixtures/
-│   │   └── testData.ts
-│   ├── smoke.spec.ts
-│   ├── security.spec.ts
-│   ├── accessibility.spec.ts
-│   ├── api.spec.ts
-│   └── idavidov.spec.ts
-└── .gitignore
-
+Environment + site adapter
+            |
+            v
+Reusable helpers + page objects
+            |
+            v
+Smoke | Security | Accessibility | API tests
+            |
+            v
+Application under test (Playwright browser/device projects)
 ```
+
+Site-specific routes, selectors, API contracts, security scenarios, and expected content are configured in `tests/config/site.config.ts`. Shared assertions and URL resolution live in `tests/helpers/`.
 
 ## Getting started
 
-### Install dependencies
+Requirements: Node.js 22.12 or later and npm.
 
+```bash
+npm ci
+npx playwright install
 ```
-npm install
+
+Set the target application and API in environment variables or update the adapter:
+
+```text
+BASE_URL=https://your-test-app.example
+API_BASE_URL=https://your-test-app.example/api
 ```
 
-### Configure the target app
+Then update `tests/config/site.config.ts` with the app’s actual routes, login selectors, protected path, API resource paths, and expected page content. The default configuration is an example, not a universal app contract.
 
-Update the adapter settings in:
+### Run tests
 
-```
-tests/config/site.config.ts
-```
-Set values such as:
-
-base URL
-required routes
-auth selectors
-protected routes
-API endpoints
-expected page content
-
-### Run the full suite
-```
+```bash
+npm run typecheck
 npx playwright test
 ```
-### Run specific tests
+
+Run an individual suite:
+
+```bash
+npm run test:smoke
+npm run test:security
+npm run test:a11y
+npm run test:api
 ```
-npx playwright test tests/smoke.spec.ts
-npx playwright test tests/security.spec.ts
-npx playwright test tests/accessibility.spec.ts
-npx playwright test tests/api.spec.ts
+
+### Run the Juice Shop adapter
+
+Start the locally installed Juice Shop container, then run:
+
+```bash
+npm run test:juice-shop
 ```
-### Run the live-site example
+
+The adapter defaults to `http://127.0.0.1:3000`; override it with `JUICE_SHOP_BASE_URL` if your local instance uses another address. This dedicated, read-only spec checks the product catalog UI and product-search API. It does not run the generic `/users` API suite or perform security challenges, login attempts, or data mutations against Juice Shop.
+
+The Playwright configuration runs projects fully in parallel by default. `PROCESS.md` describes a recommended manual triage order; it is not an enforced sequential CI gate.
+
+### Safe API mutation testing
+
+The create/update/delete lifecycle and invalid-create test are skipped by default. Run them only against a disposable test environment by setting both variables to the exact API base URL:
+
+```text
+ALLOW_API_MUTATIONS=true
+API_MUTATION_TARGET=https://your-test-app.example/api
 ```
+
+The lifecycle creates a uniquely named record, updates and verifies it, deletes it, and attempts cleanup if an assertion fails. Never enable this against production data.
+
+### Optional tenant isolation
+
+To run the tenant isolation test, configure all four values using separate test identities and a known record path belonging to each tenant:
+
+```text
+TENANT_A_TOKEN=<tenant-a-test-token>
+TENANT_A_RESOURCE_PATH=/tenants/a/records/known-id
+TENANT_B_TOKEN=<tenant-b-test-token>
+TENANT_B_RESOURCE_PATH=/tenants/b/records/known-id
+```
+
+The test verifies each identity can read its own resource and receives `403` or `404` when requesting the other tenant’s resource. Keep tokens out of source control.
+
+## Live-site example
+
+`tests/idavidov.spec.ts` is an explicitly scoped public-site example. In the latest v1.1 validation, 3 of 5 checks passed and 2 failed: the homepage was missing expected security headers, and axe found a critical invalid `aria-controls` reference on a “Load more posts” button. Header validation and the axe scan run independently, so both findings are visible in one run. See `LIVE_SITE_REPORT.md` for details and rerun the spec for current results:
+
+```bash
 npx playwright test tests/idavidov.spec.ts --project=chromium
 ```
-## Real-world validation
-The framework was validated against a public website: https://idavidov.eu
 
-Outcome:
+## Repository guide
 
-3 checks passed
-1 check failed
+- `TECHDOC.md` — technical design and test behavior
+- `CHECKLIST.md` — QA execution and release checklist
+- `ARCHITECTURE.md` — architecture diagram
+- `PROCESS.md` — recommended manual QA workflow
+- `MASTER_GUIDE.md` — consolidated guide
+- `LIVE_SITE_REPORT.md` — historical live-site observations
+- `JUICE_SHOP_ADAPTER.md` — local Juice Shop adapter and test scope
 
-The failing check exposed a real security issue:
+## Version and license
 
-missing security headers on the homepage
+Current project version: **1.1.0**
+License: **ISC** (see `LICENSE`).
 
-This demonstrates that the framework is capable of identifying meaningful production risks rather than only validating a happy-path environment.
-
-## Documentation
-Project documentation is included in:
-
-- TECHDOC.md
-- CHECKLIST.md
-- ARCHITECTURE.md
-- PROCESS.md
-- MASTER_GUIDE.md
-
-## Project status
-Current version: v1.0
-
-This project is designed as a reusable QA foundation that can be adapted to different web applications and used as a strong portfolio piece for QA automation roles.
-
-## License
-For portfolio and demonstration purposes.
-
-## Repository
-GitHub:
-
-https://github.com/Mikikem87/crosssqa-v1
+Repository: https://github.com/Mikikem87/crosssqa-v1

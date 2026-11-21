@@ -1,7 +1,7 @@
 {
   "name": "crosssqa",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.1.0",
+  "description": "Reusable Playwright and TypeScript QA framework for UI, security, accessibility, and API testing",
   "main": "index.js",
   "directories": {
     "test": "tests"
@@ -10,7 +10,10 @@
     "test": "playwright test",
     "test:smoke": "playwright test tests/smoke.spec.ts",
     "test:security": "playwright test tests/security.spec.ts",
-    "test:a11y": "playwright test tests/accessibility.spec.ts"
+    "test:a11y": "playwright test tests/accessibility.spec.ts",
+    "test:api": "playwright test tests/api.spec.ts",
+    "test:juice-shop": "playwright test tests/juice-shop.spec.ts --project=chromium",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",

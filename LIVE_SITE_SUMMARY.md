@@ -1,26 +1,18 @@
 # Live Site Validation Summary
 
-## Summary
+The framework includes an explicitly scoped Playwright example for `https://idavidov.eu`.
 
-The reusable framework was executed against a concrete public site: `https://idavidov.eu`.
+The latest v1.1 run reported 3 passed and 2 failed:
 
-## Result
+- Missing expected security headers on the homepage
+- Critical axe violation: the “Load more posts” button references an invalid `aria-controls` target
 
-- 3 passed
-- 1 failed
+The header and axe checks are separate, so both results are reported independently.
 
-## Passed checks
+Run the current example with:
 
-- home page loads without critical console or page issues
-- article page loads without critical console or page issues
-- keyboard navigation remains usable
+```bash
+npx playwright test tests/idavidov.spec.ts --project=chromium
+```
 
-## Failed check
-
-- homepage security headers are missing
-
-## Conclusion
-
-The framework successfully validates the app’s core quality and security posture in a real-world setting. It also surfaces a concrete issue that deserves remediation.
-
-This confirms the framework is not just static scaffolding: it can be run against a live site and deliver useful, actionable findings.
+These results describe a single run and should be rechecked before being treated as current. The example does not cover authenticated flows, API contracts, tenant isolation, export limits, or pricing authorization.

@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { gotoAndCollectErrors, runAxeScan, assertNoCriticalA11yIssues, assertKeyboardNavigation } from './helpers/qa';
+import {
+  gotoAndCollectErrors,
+  runAxeScan,
+  assertNoCriticalA11yIssues,
+  assertKeyboardNavigation,
+  assertSecurityHeaders,
+} from './helpers/qa';
 
 const baseURL = 'https://idavidov.eu';
 
@@ -21,7 +27,7 @@ const routes = [
 test.describe('idavidov.eu live-site validation', () => {
   for (const route of routes) {
     test(`${route.name} loads without critical issues`, async ({ page }) => {
-      const result = await gotoAndCollectErrors(page, `${baseURL}${route.path}`);
+      const result = await gotoAndCollectErrors(page, route.path, baseURL);
 
       expect(result.consoleErrors, `Console errors on ${route.path}: ${result.consoleErrors.join('; ')}`).toEqual([]);
       expect(result.pageErrors, `Page errors on ${route.path}: ${result.pageErrors.join('; ')}`).toEqual([]);
@@ -35,18 +41,18 @@ test.describe('idavidov.eu live-site validation', () => {
     });
   }
 
-  test('homepage has secure headers and no critical axe issues', async ({ page }) => {
+  test('homepage response includes baseline security headers', async ({ page }) => {
     const response = await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
-    const headers = response?.headers() ?? {};
+    expect(response, 'Homepage navigation should return an HTTP response').toBeTruthy();
+    assertSecurityHeaders(response!.headers(), [
+      'content-security-policy',
+      'x-frame-options',
+      'x-content-type-options',
+    ]);
+  });
 
-    const csp = headers['content-security-policy'] ?? headers['Content-Security-Policy'];
-    const xfo = headers['x-frame-options'] ?? headers['X-Frame-Options'];
-    const xto = headers['x-content-type-options'] ?? headers['X-Content-Type-Options'];
-
-    expect(csp).toBeTruthy();
-    expect(xfo).toBeTruthy();
-    expect(xto).toBeTruthy();
-
+  test('homepage has no critical axe violations', async ({ page }) => {
+    await page.goto(baseURL);
     const results = await runAxeScan(page);
     assertNoCriticalA11yIssues(results.violations);
   });

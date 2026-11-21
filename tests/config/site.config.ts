@@ -22,9 +22,23 @@ export type ProtectedPage = {
 export type SecurityScenario = {
   name: string;
   path: string;
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  expectedStatus?: number[];
-  body?: Record<string, string>;
+  expectedStatus: number[];
+};
+
+export type ApiPaginationConfig = {
+  pageParameter: string;
+  pageSizeParameter: string;
+  sortParameter: string;
+  orderParameter: string;
+  pageSize: number;
+  sortField: string;
+  order: 'asc' | 'desc';
+  itemsPath?: string;
+};
+
+export type TenantResource = {
+  token: string;
+  resourcePath: string;
 };
 
 export type ApiConfig = {
@@ -32,11 +46,19 @@ export type ApiConfig = {
   healthPath?: string;
   listPath?: string;
   detailPath?: string;
+  missingDetailPath?: string;
   createPath?: string;
-  updatePath?: string;
-  deletePath?: string;
-  authPath?: string;
   profilePath?: string;
+  resourcePathTemplate?: string;
+  mutationsEnabled: boolean;
+  createdStatuses: number[];
+  updatedStatuses: number[];
+  deletedStatuses: number[];
+  pagination?: ApiPaginationConfig;
+  tenantIsolation?: {
+    tenantA: TenantResource;
+    tenantB: TenantResource;
+  };
 };
 
 export type SiteAdapter = {
@@ -59,6 +81,31 @@ export type SiteAdapter = {
 
 const defaultBaseUrl = process.env.BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
 const defaultApiBaseUrl = process.env.API_BASE_URL ?? `${defaultBaseUrl}/api`;
+const tenantValues = [
+  process.env.TENANT_A_TOKEN,
+  process.env.TENANT_A_RESOURCE_PATH,
+  process.env.TENANT_B_TOKEN,
+  process.env.TENANT_B_RESOURCE_PATH,
+];
+const configuredTenantValues = tenantValues.filter(Boolean).length;
+
+if (configuredTenantValues > 0 && configuredTenantValues < tenantValues.length) {
+  throw new Error('Tenant isolation requires TENANT_A_TOKEN, TENANT_A_RESOURCE_PATH, TENANT_B_TOKEN, and TENANT_B_RESOURCE_PATH.');
+}
+
+const tenantIsolation = configuredTenantValues === tenantValues.length
+  ? {
+      tenantA: { token: tenantValues[0]!, resourcePath: tenantValues[1]! },
+      tenantB: { token: tenantValues[2]!, resourcePath: tenantValues[3]! },
+    }
+  : undefined;
+
+if (tenantIsolation && (
+  tenantIsolation.tenantA.token === tenantIsolation.tenantB.token
+  || tenantIsolation.tenantA.resourcePath === tenantIsolation.tenantB.resourcePath
+)) {
+  throw new Error('Tenant isolation requires distinct tenant tokens and resource paths.');
+}
 
 export const siteAdapter: SiteAdapter = {
   baseURL: defaultBaseUrl,
@@ -92,21 +139,22 @@ export const siteAdapter: SiteAdapter = {
     emailSelector: process.env.LOGIN_EMAIL_SELECTOR ?? '#email',
     passwordSelector: process.env.LOGIN_PASSWORD_SELECTOR ?? '#password',
   },
-  securityScenarios: [
-    { name: 'tenant isolation', path: '/tenant', expectedStatus: [200, 302, 403, 401] },
-    { name: 'export limitation', path: '/exports', expectedStatus: [200, 302, 403, 401] },
-    { name: 'pricing check', path: '/checkout', expectedStatus: [200, 302, 403, 401] },
-  ],
+  securityScenarios: [],
   api: {
     baseURL: defaultApiBaseUrl,
     healthPath: process.env.API_HEALTH_PATH ?? '/health',
     listPath: process.env.API_LIST_PATH ?? '/users',
     detailPath: process.env.API_DETAIL_PATH ?? '/users/1',
+    missingDetailPath: process.env.API_MISSING_DETAIL_PATH,
     createPath: process.env.API_CREATE_PATH ?? '/users',
-    updatePath: process.env.API_UPDATE_PATH ?? '/users/1',
-    deletePath: process.env.API_DELETE_PATH ?? '/users/1',
-    authPath: process.env.API_AUTH_PATH ?? '/auth/login',
-    profilePath: process.env.API_PROFILE_PATH ?? '/users/me',
+    profilePath: process.env.API_PROFILE_PATH,
+    resourcePathTemplate: process.env.API_RESOURCE_PATH_TEMPLATE ?? '/users/{id}',
+    mutationsEnabled: process.env.ALLOW_API_MUTATIONS === 'true'
+      && process.env.API_MUTATION_TARGET === defaultApiBaseUrl,
+    createdStatuses: [201],
+    updatedStatuses: [200, 204],
+    deletedStatuses: [200, 204],
+    tenantIsolation,
   },
 };
 

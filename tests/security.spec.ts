@@ -1,55 +1,66 @@
 import { expect, test } from '@playwright/test';
 import { getSiteConfig } from './config/site.config';
-import { assertNoBrokenRoutes } from './helpers/qa';
+import { assertNoBrokenRoutes, assertSecurityHeaders, resolveRouteUrl } from './helpers/qa';
 
 const config = getSiteConfig();
 
-// Security checks intentionally stay generic. They validate common defense-in-depth expectations such as
-// headers, auth redirection, tenant boundaries, and route traversal guards without depending on site-specific code.
-test.describe('generic security checks', () => {
-  test('security headers are present on public pages', async ({ page }) => {
-    // CSP, HSTS, frame protection and referrer controls are standard baseline controls. Missing them is a
-    // common production risk even when the app looks functional from a happy-path perspective.
-    await page.goto(config.baseURL);
+test.describe('security baseline checks', () => {
+  test('configured security headers are present on the public homepage', async ({ page }) => {
     const response = await page.goto(config.baseURL);
-    const headers = response?.headers() ?? {};
-
-    for (const header of config.securityHeaders) {
-      expect(headers[header] ?? headers[header.toLowerCase()] ?? headers[header.toUpperCase()], `Missing header: ${header}`).toBeTruthy();
-    }
+    expect(response, 'Homepage navigation should return an HTTP response').toBeTruthy();
+    assertSecurityHeaders(response!.headers(), config.securityHeaders);
   });
 
-  test('unauthenticated access is blocked or redirected', async ({ page }) => {
-    // Protected pages should never silently show sensitive data to anonymous users. Redirection to a login page
-    // or a 401/403 response is the expected outcome for a secure app.
-    await page.goto(`${config.baseURL}${config.protectedPage.path}`);
-    await expect(page).toHaveURL(/login|signin|auth|error|403|401/i);
+  test('anonymous users are rejected or redirected from the protected page', async ({ page }) => {
+    const response = await page.goto(resolveRouteUrl(config.protectedPage.path, config.baseURL));
+    const status = response?.status();
+    const currentPath = new URL(page.url()).pathname.replace(/\/+$/, '') || '/';
+    const loginPath = new URL(config.loginPage.path, config.baseURL).pathname.replace(/\/+$/, '') || '/';
+
+    const rejected = status === 401 || status === 403;
+    const redirectedToConfiguredLogin = currentPath === loginPath;
+    expect(
+      rejected || redirectedToConfiguredLogin,
+      `Expected 401/403 or redirect to ${loginPath}; received status ${status} at ${currentPath}`,
+    ).toBeTruthy();
   });
 
-  test('tenant-scoped and export endpoints are not trivially accessible', async ({ page }) => {
-    // Multi-tenant apps are especially vulnerable when paths like tenant, exports, or pricing endpoints are
-    // directly open without proper auth or tenant enforcement. We accept redirect or auth failures, but not a direct success path.
+  test('configured security route status contracts are met', async ({ page }) => {
+    test.skip(!config.securityScenarios?.length, 'Configure explicit expected statuses for site-specific security routes.');
+
     for (const scenario of config.securityScenarios ?? []) {
-      const response = await page.goto(`${config.baseURL}${scenario.path}`);
-      const code = response?.status() ?? 200;
-      expect(scenario.expectedStatus ?? [200, 302, 403, 401], `Unexpected status for ${scenario.name}: ${code}`).toContain(code);
+      const response = await page.goto(resolveRouteUrl(scenario.path, config.baseURL));
+      expect(response, `Expected an HTTP response for ${scenario.name}`).toBeTruthy();
+      expect(
+        scenario.expectedStatus,
+        `Unexpected status for ${scenario.name}: ${response!.status()}`,
+      ).toContain(response!.status());
     }
   });
 
-  test('routing checks do not reveal critical failures', async ({ page }) => {
-    // Broken routes often indicate configuration drift, framework issues, or accidentally exposed backend errors.
-    await assertNoBrokenRoutes(page, config.requiredRoutes);
+  test('tenant A and B can access their own records but not each other’s', async ({ request }) => {
+    const tenantIsolation = config.api.tenantIsolation;
+    test.skip(!tenantIsolation, 'Configure both tenant tokens and resource paths to run tenant-isolation checks.');
+    const { tenantA, tenantB } = tenantIsolation!;
+    const getResource = (resourcePath: string, token: string) => request.get(
+      `${config.api.baseURL.replace(/\/+$/, '')}/${resourcePath.replace(/^\/+/, '')}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    const [tenantAOwn, tenantBOwn, tenantAReadsB, tenantBReadsA] = await Promise.all([
+      getResource(tenantA.resourcePath, tenantA.token),
+      getResource(tenantB.resourcePath, tenantB.token),
+      getResource(tenantB.resourcePath, tenantA.token),
+      getResource(tenantA.resourcePath, tenantB.token),
+    ]);
+
+    expect(tenantAOwn.status(), 'Tenant A should be able to access its own record').toBe(200);
+    expect(tenantBOwn.status(), 'Tenant B should be able to access its own record').toBe(200);
+    expect([403, 404], 'Tenant A must not access Tenant B’s record').toContain(tenantAReadsB.status());
+    expect([403, 404], 'Tenant B must not access Tenant A’s record').toContain(tenantBReadsA.status());
   });
 
-  test('route traversal payloads do not resolve to real pages', async ({ page }) => {
-    // Encoded traversal attempts should not reach a valid route in the application. This catches directory traversal
-    // and path normalization issues that often appear before a real security problem emerges.
-    const payloads = ['../admin', '..%2Fadmin', '%2e%2e%2fadmin', '/%2e%2e/%2e%2e/admin'];
-
-    for (const payload of payloads) {
-      const response = await page.goto(`${config.baseURL}${payload}`);
-      const status = response?.status() ?? 404;
-      expect(status).toBeGreaterThanOrEqual(400);
-    }
+  test('critical routes do not return broken responses or page errors', async ({ page }) => {
+    await assertNoBrokenRoutes(page, config.requiredRoutes, config.baseURL);
   });
 });
