@@ -8,7 +8,7 @@ Reusable Playwright + TypeScript framework for UI smoke/regression, security bas
 - UI, API, security, and accessibility coverage with Playwright and axe-core
 - Chromium, Firefox, WebKit, mobile, and tablet project configuration
 - Explicitly scoped assertions that distinguish verified behavior from site-specific checks
-- CI type checking and Playwright test discovery
+- CI type checking, browser setup, helper tests, and Playwright test discovery
 
 ## Test coverage
 
@@ -16,10 +16,10 @@ Reusable Playwright + TypeScript framework for UI smoke/regression, security bas
 | --- | --- |
 | Smoke | Configured route loading, page/console errors, failed responses, headings, and login form visibility |
 | Security | Configured response headers, anonymous protected-page rejection/redirect, explicit route contracts, optional two-tenant resource isolation |
-| Accessibility | Separate axe scans, accessible form names, real Tab-key movement, landmarks, optional skip links/live regions/dialogs, reduced-motion browser emulation |
-| API | Health, JSON collection shape, configured existing/missing detail resources, optional auth rejection, configured pagination/sorting, opt-in CRUD lifecycle |
+| Accessibility | Separate axe scans, accessible form names, recorded Tab/Shift+Tab focus movement, landmarks, and configured behavior checks for skip links, dialogs, live regions, and reduced-motion probes |
+| API | Health, JSON collection shape, configured existing/missing detail resources, auth rejection, and configured pagination size/order/metadata |
 
-Some checks need application-specific settings. Tenant isolation requires two separate bearer tokens and tenant-owned resource paths. Mutation tests are skipped unless the disposable API target is explicitly confirmed. A generic status check alone is not treated as proof of tenant isolation, authorization, or export limits.
+Some checks need application-specific settings. Tenant isolation requires two separate bearer tokens and tenant-owned resource paths. CRUD mutation tests are separate, each uses its own generated resource, and all are skipped unless the disposable API target is explicitly confirmed. A generic status check alone is not treated as proof of tenant isolation, authorization, or export limits.
 
 ## Architecture
 
@@ -82,7 +82,7 @@ npm run test:juice-shop
 
 The adapter defaults to `http://127.0.0.1:3000`; override it with `JUICE_SHOP_BASE_URL` if your local instance uses another address. This dedicated, read-only spec checks the product catalog UI and product-search API. It does not run the generic `/users` API suite or perform security challenges, login attempts, or data mutations against Juice Shop.
 
-The Playwright configuration runs projects fully in parallel by default. `PROCESS.md` describes a recommended manual triage order; it is not an enforced sequential CI gate.
+The Playwright configuration runs projects fully in parallel by default. `PROCESS.md` describes a recommended manual triage order; it is not an enforced sequential CI gate. CI installs Chromium and runs isolated helper tests plus discovery; app-dependent suites require a configured target and are not run by default.
 
 ### Safe API mutation testing
 
@@ -93,7 +93,7 @@ ALLOW_API_MUTATIONS=true
 API_MUTATION_TARGET=https://your-test-app.example/api
 ```
 
-The lifecycle creates a uniquely named record, updates and verifies it, deletes it, and attempts cleanup if an assertion fails. Never enable this against production data.
+Create, update, and delete run as separate tests. Each creates its own uniquely named resource, verifies the specific operation, and attempts cleanup if an assertion fails. Never enable these against production data.
 
 ### Optional tenant isolation
 
@@ -106,11 +106,11 @@ TENANT_B_TOKEN=<tenant-b-test-token>
 TENANT_B_RESOURCE_PATH=/tenants/b/records/known-id
 ```
 
-The test verifies each identity can read its own resource and receives `403` or `404` when requesting the other tenant’s resource. Keep tokens out of source control.
+The test verifies each identity can read its own resource and receives `403` or `404` when requesting the other tenant’s resource. It does not test export limits or pricing authorization. Keep tokens out of source control.
 
 ## Live-site example
 
-`tests/idavidov.spec.ts` is an explicitly scoped public-site example. In the latest v1.1 validation, 3 of 5 checks passed and 2 failed: the homepage was missing expected security headers, and axe found a critical invalid `aria-controls` reference on a “Load more posts” button. Header validation and the axe scan run independently, so both findings are visible in one run. See `LIVE_SITE_REPORT.md` for details and rerun the spec for current results:
+`tests/idavidov.spec.ts` is an explicitly scoped public-site example. In the latest v1.1 validation, 3 of 5 checks passed and 2 failed: the homepage response was missing all five configured security headers, and axe found a critical invalid `aria-controls` reference on a “Load more posts” button. Header validation and the axe scan run independently, so both findings are visible in one run. See `LIVE_SITE_REPORT.md` for details and rerun the spec for current results:
 
 ```bash
 npx playwright test tests/idavidov.spec.ts --project=chromium

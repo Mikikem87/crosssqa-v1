@@ -188,9 +188,19 @@ What it validates:
 
 ### `assertKeyboardNavigation()`
 Purpose:
-- Send real Tab key presses and verify focus advances through visible interactive elements.
+- Send real Tab and Shift+Tab key presses, record focused element indexes, verify focus advances, and check backward navigation returns to the expected element.
 
-Scope: this checks basic Tab-key movement. It does not prove complete focus order correctness or absence of every possible keyboard trap.
+Scope: this verifies basic forward/backward focus movement and records the sequence. It does not infer a visually correct order or prove every possible keyboard trap is absent.
+
+### Configured accessibility interactions
+
+The site adapter can optionally configure:
+
+- `reducedMotionProbe`: an element selector, computed CSS property, and expected value under the reduced-motion preference.
+- `liveRegion`: a trigger, live-region selector, and expected announcement. The test verifies the region text changes after the interaction.
+- `dialog`: open, dialog, and close selectors. The test checks initial focus, focus containment during Tab/Shift+Tab, close behavior, and focus restoration to the opener.
+
+These behavior checks are skipped when the relevant site-specific selectors and expectations are not configured. Merely emulating a preference or counting elements is not treated as proof of application behavior.
 
 ### `assertSecurityHeaders()`
 Purpose:
@@ -320,8 +330,8 @@ What it checks:
 
 Without all four `TENANT_A_TOKEN`, `TENANT_A_RESOURCE_PATH`, `TENANT_B_TOKEN`, and `TENANT_B_RESOURCE_PATH` values, the test is skipped. A generic route status test does not claim tenant isolation or export-limit coverage.
 
-### Test: explicit site-specific security route contracts
-Optional routes must define an exact expected status list in the site adapter. This verifies only that configured response contract; it does not prove authorization unless the expected behavior and credentials make that assertion meaningful.
+### Test: explicit protected security routes
+Optional protected UI routes must define the expected denial status (`401` or `403`) in the site adapter. A successful export response or a generic `200` route check is not considered proof of an export limit or authorization; those require a separate endpoint-specific assertion over the returned data and limits.
 
 ### Test: critical routes do not return broken responses
 
@@ -335,10 +345,10 @@ Purpose:
 The homepage and login axe scans run as separate tests, so a failure in one does not prevent the other scan.
 
 - Form fields must have an associated label, `aria-label`, `aria-labelledby`, or title. A `name` attribute or placeholder alone does not count.
-- Keyboard checks press the real Tab key and confirm visible interactive controls receive focus. This is a basic progression check, not a proof of all focus-order rules or every keyboard trap.
+- Keyboard checks press Tab and Shift+Tab, record focus order indexes, and verify movement in both directions. The configured dialog test additionally verifies modal focus containment and restoration.
 - Landmark and heading checks require a main landmark and a heading structure.
-- Skip-link, live-region, and dialog checks validate behavior/semantics when those components exist; those cases are skipped when the page has no such component.
-- Reduced-motion coverage verifies Playwright can emulate the user preference. It does not claim to verify every app animation responds correctly.
+- Skip-link behavior is checked when a skip link exists. Live-region announcements and dialog open/close behavior require configured triggers and expected results; otherwise these checks are skipped.
+- Reduced-motion behavior requires a configured probe whose default computed CSS value differs from the expected reduced-motion value. The test emulates reduced motion and verifies that the probe changes to the expected value. Without it, the test is skipped rather than claiming the app honors the preference.
 - The custom contrast heuristic was removed because it made unreliable assumptions about transparent and layered backgrounds. Axe remains the automated accessibility scanner; manual review is still required.
 
 ---
@@ -351,11 +361,12 @@ The API suite asserts expected behavior rather than accepting a broad set of pot
 - List: requires status 200, JSON content type, and an actual array in the response (or configured items path).
 - Detail: configured existing resource must return 200 and an identifier. A separate configured missing path must return 404.
 - Authentication: an explicitly configured protected profile path must return 401/403 without credentials.
-- Pagination: optional adapter config supplies query parameter names, page size, sort field/order, and optional item path. The test verifies the limit and actual sorted order; it skips if not configured.
-- Mutation lifecycle: create uses a UUID email; update/read-back/delete use the created resource ID; cleanup is attempted if later assertions fail.
+- Pagination: adapter config supplies query parameter names, page size, sort field/order, metadata paths, and optional item path. The test verifies the returned limit, page/size/total metadata, and actual sorted order; it skips if not configured.
+- Valid create, valid update, and valid delete are separate tests. Each test creates its own UUID-addressed resource; create reads it back, update verifies the changed field, and delete confirms a subsequent GET returns 404.
+- Cleanup is attempted if an assertion fails. A successful delete is not repeated after a confirmed 404.
 - Invalid create: expects 400/422 and attempts cleanup if the API unexpectedly accepts the payload and returns an ID.
 
-Create/update/delete and invalid-create tests are skipped unless `ALLOW_API_MUTATIONS=true` and `API_MUTATION_TARGET` exactly matches the configured API base URL. Enable them only against a disposable test environment. Create defaults to 201, update to 200/204, and delete to 200/204; customize these statuses in the adapter if the API contract differs.
+Create/update/delete and invalid-create tests are skipped unless `ALLOW_API_MUTATIONS=true` and `API_MUTATION_TARGET` exactly matches the configured API base URL. Enable them only against a disposable test environment. Create defaults to 201, update to 200/204, and delete to 200/204; customize these success statuses in the adapter if the API contract differs. Error responses are never accepted as successful mutation outcomes.
 
 ---
 

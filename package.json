@@ -13,6 +13,7 @@
     "test:a11y": "playwright test tests/accessibility.spec.ts",
     "test:api": "playwright test tests/api.spec.ts",
     "test:juice-shop": "playwright test tests/juice-shop.spec.ts --project=chromium",
+    "test:helpers": "playwright test tests/helpers/qa.spec.ts --project=chromium",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],

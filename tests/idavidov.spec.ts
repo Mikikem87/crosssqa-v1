@@ -33,7 +33,10 @@ test.describe('idavidov.eu live-site validation', () => {
       expect(result.pageErrors, `Page errors on ${route.path}: ${result.pageErrors.join('; ')}`).toEqual([]);
       expect(result.failedResponses, `Failed responses on ${route.path}: ${result.failedResponses.join(', ')}`).toEqual([]);
 
-      await expect(page.locator('h1, h2').first()).toBeVisible();
+      await expect(page.getByRole('heading', {
+        name: route.expectedHeading,
+        exact: false,
+      })).toBeVisible();
       for (const text of route.expectedText) {
         const matches = page.getByText(text, { exact: false });
         await expect(matches.first()).toBeVisible();
@@ -48,6 +51,8 @@ test.describe('idavidov.eu live-site validation', () => {
       'content-security-policy',
       'x-frame-options',
       'x-content-type-options',
+      'referrer-policy',
+      'permissions-policy',
     ]);
   });
 

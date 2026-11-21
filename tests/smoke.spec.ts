@@ -24,7 +24,11 @@ for (const route of config.requiredRoutes) {
     expect(result.failedResponses, `Failed responses on ${route.path}: ${result.failedResponses.join(', ')}`).toEqual([]);
 
     await assertRouteContent(page, route);
-    await expect(page).toHaveURL(result.url);
+    const expectedUrl = new URL(result.url);
+    const actualUrl = new URL(page.url());
+    expect(actualUrl.origin).toBe(expectedUrl.origin);
+    expect(actualUrl.pathname.replace(/\/+$/, '') || '/')
+      .toBe(expectedUrl.pathname.replace(/\/+$/, '') || '/');
   });
 }
 

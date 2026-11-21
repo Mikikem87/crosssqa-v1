@@ -31,10 +31,14 @@
 - [ ] No critical accessibility issues remain.
 - [ ] Form controls have accessible labels.
 - [ ] Real Tab presses move focus through visible interactive controls.
+- [ ] Shift+Tab moves focus back and returns to the expected forward focus target.
+- [ ] Configured dialogs contain focus and restore it to the opener after closing.
+- [ ] Configured live-region checks verify an announcement after a real state change.
+- [ ] Configured reduced-motion checks verify a probe's computed style changes to the expected value.
 - [ ] Page has a main landmark.
 - [ ] Page includes a clear heading structure.
 - [ ] Login form remains keyboard usable.
-- [ ] Treat reduced-motion coverage as browser preference emulation, not proof the app suppresses animation.
+- [ ] Configured reduced-motion probe changes from its default computed value to the expected reduced-motion value.
 
 ## 4. Security checks
 
@@ -51,9 +55,9 @@
 - [ ] Health endpoint returns success status.
 - [ ] List endpoint returns a JSON array with status 200.
 - [ ] Configured existing detail resource returns 200; configured missing resource returns 404.
-- [ ] Mutation tests use a unique test record and are enabled only on a disposable environment.
+- [ ] Create, update, and delete are separate tests using per-test resources and cleanup; enable only on a disposable environment.
 - [ ] Invalid payload rejection is checked separately from successful create.
-- [ ] Pagination size and configured sort order are asserted, not just request acceptance.
+- [ ] Pagination size, configured sort order, and response metadata are asserted, not just request acceptance.
 - [ ] Response schema includes required fields.
 - [ ] Configured protected API profile rejects unauthenticated requests with 401/403.
 

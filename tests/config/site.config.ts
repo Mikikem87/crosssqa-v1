@@ -17,13 +17,16 @@ export type SiteLoginPage = {
 export type ProtectedPage = {
   path: string;
   expectedTitleText?: string;
+  protectedContentSelector?: string;
 };
 
 export type SecurityScenario = {
   name: string;
   path: string;
-  expectedStatus: number[];
+  expectedStatus: Array<401 | 403>;
 };
+
+export type ApiSuccessStatus = 200 | 201 | 202 | 203 | 204;
 
 export type ApiPaginationConfig = {
   pageParameter: string;
@@ -33,7 +36,28 @@ export type ApiPaginationConfig = {
   pageSize: number;
   sortField: string;
   order: 'asc' | 'desc';
+  pageMetadataPath: string;
+  pageSizeMetadataPath: string;
+  totalMetadataPath: string;
   itemsPath?: string;
+};
+
+export type AccessibilityConfig = {
+  reducedMotionProbe?: {
+    selector: string;
+    cssProperty: string;
+    expectedValue: string;
+  };
+  liveRegion?: {
+    triggerSelector: string;
+    regionSelector: string;
+    expectedText: string;
+  };
+  dialog?: {
+    openSelector: string;
+    dialogSelector: string;
+    closeSelector: string;
+  };
 };
 
 export type TenantResource = {
@@ -51,9 +75,9 @@ export type ApiConfig = {
   profilePath?: string;
   resourcePathTemplate?: string;
   mutationsEnabled: boolean;
-  createdStatuses: number[];
-  updatedStatuses: number[];
-  deletedStatuses: number[];
+  createdStatuses: ApiSuccessStatus[];
+  updatedStatuses: ApiSuccessStatus[];
+  deletedStatuses: ApiSuccessStatus[];
   pagination?: ApiPaginationConfig;
   tenantIsolation?: {
     tenantA: TenantResource;
@@ -68,6 +92,7 @@ export type SiteAdapter = {
   protectedPage: ProtectedPage;
   expectedTitleText: string;
   securityHeaders: string[];
+  accessibility?: AccessibilityConfig;
   auth: {
     username?: string;
     password?: string;
@@ -124,7 +149,9 @@ export const siteAdapter: SiteAdapter = {
   protectedPage: {
     path: process.env.PROTECTED_PATH ?? '/dashboard',
     expectedTitleText: process.env.PROTECTED_TITLE ?? 'Dashboard',
+    protectedContentSelector: process.env.PROTECTED_CONTENT_SELECTOR,
   },
+  accessibility: {},
   securityHeaders: [
     'content-security-policy',
     'x-frame-options',

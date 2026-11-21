@@ -8,6 +8,8 @@ import {
   assertLandmarksAndStructure,
   assertSkipLinks,
   assertReducedMotionPreference,
+  assertLiveRegionAnnouncement,
+  assertDialogKeyboardBehavior,
 } from './helpers/qa';
 
 const config = getSiteConfig();
@@ -39,24 +41,8 @@ test.describe('accessibility checks', () => {
 
   test('live regions use valid announcement semantics when present', async ({ page }) => {
     await page.goto(config.baseURL);
-    const liveRegions = page.locator('[aria-live], [role="status"], [role="alert"]');
-    const count = await liveRegions.count();
-    test.skip(count === 0, 'No live regions are present on this page.');
-
-    for (let i = 0; i < count; i += 1) {
-      const region = liveRegions.nth(i);
-      const role = await region.getAttribute('role');
-      const ariaLive = await region.getAttribute('aria-live');
-      if (ariaLive) {
-        expect(['off', 'polite', 'assertive']).toContain(ariaLive);
-      }
-      if (role === 'status' && ariaLive) {
-        expect(ariaLive).toBe('polite');
-      }
-      if (role === 'alert' && ariaLive) {
-        expect(ariaLive).toBe('assertive');
-      }
-    }
+    test.skip(!config.accessibility?.liveRegion, 'Configure a trigger, live-region selector, and expected announcement to test a real state change.');
+    await assertLiveRegionAnnouncement(page, config.accessibility!.liveRegion!);
   });
 
   test('visible dialogs have an accessible label', async ({ page }) => {
@@ -81,8 +67,16 @@ test.describe('accessibility checks', () => {
     }
   });
 
-  test('browser can emulate the reduced-motion preference', async ({ page }) => {
-    await assertReducedMotionPreference(page);
+  test('dialog traps keyboard focus and restores it when closed', async ({ page }) => {
+    await page.goto(config.baseURL);
+    test.skip(!config.accessibility?.dialog, 'Configure dialog open, dialog, and close selectors to test modal keyboard behavior.');
+    await assertDialogKeyboardBehavior(page, config.accessibility!.dialog!);
+  });
+
+  test('application honors reduced motion for a configured animation', async ({ page }) => {
+    await page.goto(config.baseURL);
+    test.skip(!config.accessibility?.reducedMotionProbe, 'Configure a probe element and expected reduced-motion CSS value.');
+    await assertReducedMotionPreference(page, config.accessibility!.reducedMotionProbe!);
   });
 
   test('homepage exposes a main landmark and a heading', async ({ page }) => {

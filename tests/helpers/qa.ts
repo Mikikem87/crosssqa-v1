@@ -122,7 +122,7 @@ const keyboardFocusableSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-export async function assertKeyboardNavigation(page: Page) {
+export async function assertKeyboardNavigation(page: Page): Promise<number[]> {
   const focusable = page.locator(keyboardFocusableSelector);
   const visibleCount = await focusable.evaluateAll((elements) =>
     elements.filter((element) => element instanceof HTMLElement
@@ -132,25 +132,39 @@ export async function assertKeyboardNavigation(page: Page) {
 
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
-  const focusedElements = new Set<number>();
+  const focusSequence: number[] = [];
   const tabLimit = Math.min(visibleCount, 8);
   for (let i = 0; i < tabLimit; i += 1) {
     await page.keyboard.press('Tab');
     const active = page.locator(':focus');
-    const isFocusable = await active.evaluate((element) => element.matches(
-      'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    )).catch(() => false);
-    if (isFocusable && await active.isVisible()) {
-      focusedElements.add(await active.evaluate((element, selector) =>
-        Array.from(document.querySelectorAll(selector)).indexOf(element), keyboardFocusableSelector,
-      ));
-    }
+    const focusedIndex = await active.evaluate((element, selector) => {
+      if (!element.matches(selector) || !(element instanceof HTMLElement)
+        || !(element.offsetWidth || element.offsetHeight || element.getClientRects().length)) {
+        return -1;
+      }
+      return Array.from(document.querySelectorAll(selector)).indexOf(element);
+    }, keyboardFocusableSelector).catch(() => -1);
+    expect(focusedIndex, 'Tab should focus a visible interactive element').toBeGreaterThanOrEqual(0);
+    expect(focusedIndex, 'Tab should advance focus instead of leaving it on the same element')
+      .not.toBe(focusSequence[focusSequence.length - 1]);
+    focusSequence.push(focusedIndex);
   }
 
-  expect(focusedElements.size, 'Tab should move focus through visible interactive elements').toBeGreaterThan(0);
-  if (visibleCount > 1) {
-    expect(focusedElements.size, 'Tab should advance beyond a single focusable element').toBeGreaterThan(1);
+  if (focusSequence.length > 1) {
+    const lastFocused = focusSequence[focusSequence.length - 1];
+    await page.keyboard.press('Shift+Tab');
+    const previousFocus = await page.locator(':focus').evaluate((element, selector) =>
+      Array.from(document.querySelectorAll(selector)).indexOf(element), keyboardFocusableSelector);
+    expect(previousFocus, 'Shift+Tab should move focus back to a focusable element').toBeGreaterThanOrEqual(0);
+    expect(previousFocus, 'Shift+Tab should not leave focus on the same element').not.toBe(lastFocused);
+
+    await page.keyboard.press('Tab');
+    const restoredFocus = await page.locator(':focus').evaluate((element, selector) =>
+      Array.from(document.querySelectorAll(selector)).indexOf(element), keyboardFocusableSelector);
+    expect(restoredFocus, 'Tab should return to the previously focused element').toBe(lastFocused);
   }
+
+  return focusSequence;
 }
 
 export async function assertLandmarksAndStructure(page: Page) {
@@ -199,18 +213,82 @@ export async function assertSkipLinks(page: Page) {
   await expect.poll(() => new URL(page.url()).hash).toBe(`#${targetId}`);
 }
 
-export async function assertReducedMotionPreference(page: Page) {
+export async function assertReducedMotionPreference(
+  page: Page,
+  probe: { selector: string; cssProperty: string; expectedValue: string },
+) {
+  const probeElement = page.locator(probe.selector);
+  await expect(probeElement).toBeVisible();
+  const defaultValue = await probeElement.evaluate((element, property) =>
+    window.getComputedStyle(element).getPropertyValue(property).trim(), probe.cssProperty,
+  );
+
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const reducedMotionEnabled = await page.evaluate(() =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   );
   expect(reducedMotionEnabled).toBeTruthy();
+  expect(defaultValue, 'Configured probe should have a distinct non-reduced default value')
+    .not.toBe(probe.expectedValue);
+  await expect.poll(() => probeElement.evaluate((element, property) =>
+    window.getComputedStyle(element).getPropertyValue(property).trim(), probe.cssProperty,
+  )).toBe(probe.expectedValue);
+}
+
+export async function assertLiveRegionAnnouncement(
+  page: Page,
+  config: { triggerSelector: string; regionSelector: string; expectedText: string },
+) {
+  const region = page.locator(config.regionSelector);
+  await expect(region).toBeVisible();
+  const initialText = (await region.textContent())?.trim() ?? '';
+
+  await page.locator(config.triggerSelector).click();
+
+  await expect.poll(async () => (await region.textContent())?.trim() ?? '')
+    .not.toBe(initialText);
+  await expect(region).toContainText(config.expectedText);
+}
+
+export async function assertDialogKeyboardBehavior(
+  page: Page,
+  config: { openSelector: string; dialogSelector: string; closeSelector: string },
+) {
+  const opener = page.locator(config.openSelector);
+  const dialog = page.locator(config.dialogSelector);
+  await opener.click();
+  await expect(dialog).toBeVisible();
+
+  const focusInsideDialog = () => page.evaluate((selector) => {
+    const active = document.activeElement;
+    const container = document.querySelector(selector);
+    return Boolean(active && container?.contains(active));
+  }, config.dialogSelector);
+
+  expect(await focusInsideDialog(), 'Opening the dialog should move focus inside it').toBeTruthy();
+  const focusable = dialog.locator(keyboardFocusableSelector);
+  const visibleFocusableCount = await focusable.evaluateAll((elements) =>
+    elements.filter((element) => element instanceof HTMLElement
+      && !!(element.offsetWidth || element.offsetHeight || element.getClientRects().length)).length,
+  );
+  expect(visibleFocusableCount, 'Dialog should expose a visible keyboard-focusable control').toBeGreaterThan(0);
+
+  for (let i = 0; i <= visibleFocusableCount; i += 1) {
+    await page.keyboard.press('Tab');
+    expect(await focusInsideDialog(), 'Tab focus should remain within the modal dialog').toBeTruthy();
+  }
+
+  await page.keyboard.press('Shift+Tab');
+  expect(await focusInsideDialog(), 'Shift+Tab focus should remain within the modal dialog').toBeTruthy();
+
+  await dialog.locator(config.closeSelector).click();
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
 }
 
 export function assertSecurityHeaders(headers: Record<string, string>, requiredHeaders: string[]) {
-  for (const header of requiredHeaders) {
-    expect(headers[header.toLowerCase()], `Missing security header: ${header}`).toBeTruthy();
-  }
+  const missingHeaders = requiredHeaders.filter((header) => !headers[header.toLowerCase()]);
+  expect(missingHeaders, `Missing security headers: ${missingHeaders.join(', ')}`).toEqual([]);
 }
 
 export async function assertRouteContent(

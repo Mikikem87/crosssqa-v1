@@ -15,7 +15,7 @@ Header validation and axe scanning run independently in v1.1. The previous combi
 
 ### Missing security headers
 
-The homepage response did not contain expected `Content-Security-Policy`, `X-Frame-Options`, and `X-Content-Type-Options` headers.
+The homepage response did not contain any of the five configured headers: `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`.
 
 This is a defense-in-depth finding, not evidence by itself of an exploitable vulnerability. Confirm current headers and review the site's hosting/application configuration before reporting it as a current issue.
 

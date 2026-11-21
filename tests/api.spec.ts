@@ -57,6 +57,30 @@ function getResourceUrl(id: string) {
   return getUrl(template.replace('{id}', encodeURIComponent(id)));
 }
 
+async function createDisposableUser(request: import('@playwright/test').APIRequestContext) {
+  const email = `crosssqa-${randomUUID()}@example.test`;
+  const response = await request.post(getUrl(config.api.createPath ?? '/users'), {
+    data: buildUser({ email }),
+  });
+  const body: unknown = response.ok() ? await response.json().catch(() => null) : null;
+  const resourceUrl = body ? getResourceUrl(getResourceId(body)) : undefined;
+  return { email, response, resourceUrl };
+}
+
+async function cleanupDisposableResource(
+  request: import('@playwright/test').APIRequestContext,
+  resourceUrl: string | undefined,
+) {
+  if (!resourceUrl) {
+    return;
+  }
+  const response = await request.delete(resourceUrl);
+  expect(
+    [...config.api.deletedStatuses, 404],
+    `Cleanup should delete or confirm absence of ${resourceUrl}`,
+  ).toContain(response.status());
+}
+
 test.describe('API contract and regression checks', () => {
   test('health endpoint responds with a successful status', async ({ request }) => {
     const response = await request.get(getUrl(config.api.healthPath ?? '/health'));
@@ -103,9 +127,16 @@ test.describe('API contract and regression checks', () => {
 
     const response = await request.get(url.toString());
     expect(response.status()).toBe(200);
-    const items = getCollection(await response.json(), pagination!.itemsPath);
+    const body: unknown = await response.json();
+    const items = getCollection(body, pagination!.itemsPath);
     expect(items.length, 'The endpoint must not exceed the requested page size').toBeLessThanOrEqual(pagination!.pageSize);
     expect(items.length, 'At least two records are needed to verify sort order').toBeGreaterThanOrEqual(2);
+    expect(readPath(body, pagination!.pageMetadataPath), 'Response metadata should report the requested page')
+      .toBe(1);
+    expect(readPath(body, pagination!.pageSizeMetadataPath), 'Response metadata should report the requested page size')
+      .toBe(pagination!.pageSize);
+    expect(readPath(body, pagination!.totalMetadataPath), 'Response metadata should include a total record count')
+      .toBeGreaterThanOrEqual(items.length);
 
     const values = items.map((item) => {
       if (!item || typeof item !== 'object') {
@@ -128,46 +159,61 @@ test.describe('API contract and regression checks', () => {
     }
   });
 
-  test('create, update, and delete use a unique resource and clean it up', async ({ request }) => {
+  test('valid create returns the configured success status and persists the new resource', async ({ request }) => {
     test.skip(!config.api.mutationsEnabled, 'Set ALLOW_API_MUTATIONS=true and API_MUTATION_TARGET to the exact API base URL of a disposable test environment.');
 
-    const email = `crosssqa-${randomUUID()}@example.test`;
-    const createResponse = await request.post(getUrl(config.api.createPath ?? '/users'), {
-      data: buildUser({ email }),
-    });
-    const createBody = createResponse.ok() ? await createResponse.json().catch(() => null) : null;
-    let resourceId: string | undefined;
-    let resourceUrl: string | undefined;
-    let deleted = false;
-
+    const created = await createDisposableUser(request);
     try {
-      if (createBody) {
-        resourceId = getResourceId(createBody);
-        resourceUrl = getResourceUrl(resourceId);
-      }
-      expect(config.api.createdStatuses).toContain(createResponse.status());
-      expect(resourceId, 'Create response must include the newly created resource ID').toBeTruthy();
+      expect(config.api.createdStatuses).toContain(created.response.status());
+      expect(created.resourceUrl, 'Create response must include the new resource ID').toBeTruthy();
+      const readBackResponse = await request.get(created.resourceUrl!);
+      expect(readBackResponse.status()).toBe(200);
+      const readBackBody = getRecord(await readBackResponse.json());
+      expect(readBackBody.email).toBe(created.email);
+    } finally {
+      await cleanupDisposableResource(request, created.resourceUrl);
+    }
+  });
 
-      const updateResponse = await request.patch(resourceUrl!, {
+  test('valid update changes a resource created by this test', async ({ request }) => {
+    test.skip(!config.api.mutationsEnabled, 'Set ALLOW_API_MUTATIONS=true and API_MUTATION_TARGET to the exact API base URL of a disposable test environment.');
+
+    const created = await createDisposableUser(request);
+    try {
+      expect(config.api.createdStatuses).toContain(created.response.status());
+      expect(created.resourceUrl, 'Create response must include the new resource ID').toBeTruthy();
+
+      const updateResponse = await request.patch(created.resourceUrl!, {
         data: { name: 'CrossSQA Updated QA User' },
       });
       expect(config.api.updatedStatuses).toContain(updateResponse.status());
 
-      const readBackResponse = await request.get(resourceUrl!);
+      const readBackResponse = await request.get(created.resourceUrl!);
       expect(readBackResponse.status()).toBe(200);
-      const readBackBody = getRecord(await readBackResponse.json());
-      expect(readBackBody.name).toBe('CrossSQA Updated QA User');
-
-      const deleteResponse = await request.delete(resourceUrl!);
-      expect(config.api.deletedStatuses).toContain(deleteResponse.status());
-      deleted = true;
+      expect(getRecord(await readBackResponse.json()).name).toBe('CrossSQA Updated QA User');
     } finally {
-      if (resourceUrl && !deleted) {
-        const cleanupResponse = await request.delete(resourceUrl);
-        expect(
-          config.api.deletedStatuses,
-          `Cleanup failed for generated resource ${resourceId}`,
-        ).toContain(cleanupResponse.status());
+      await cleanupDisposableResource(request, created.resourceUrl);
+    }
+  });
+
+  test('valid delete removes a resource created by this test', async ({ request }) => {
+    test.skip(!config.api.mutationsEnabled, 'Set ALLOW_API_MUTATIONS=true and API_MUTATION_TARGET to the exact API base URL of a disposable test environment.');
+
+    const created = await createDisposableUser(request);
+    let confirmedDeleted = false;
+    try {
+      expect(config.api.createdStatuses).toContain(created.response.status());
+      expect(created.resourceUrl, 'Create response must include the new resource ID').toBeTruthy();
+
+      const deleteResponse = await request.delete(created.resourceUrl!);
+      expect(config.api.deletedStatuses).toContain(deleteResponse.status());
+
+      const readAfterDelete = await request.get(created.resourceUrl!);
+      expect(readAfterDelete.status(), 'Deleted resource should no longer be readable').toBe(404);
+      confirmedDeleted = true;
+    } finally {
+      if (!confirmedDeleted) {
+        await cleanupDisposableResource(request, created.resourceUrl);
       }
     }
   });
@@ -192,3 +238,12 @@ test.describe('API contract and regression checks', () => {
     }
   });
 });
+
+function readPath(body: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((current, key) => {
+    if (!current || typeof current !== 'object') {
+      return undefined;
+    }
+    return (current as Record<string, unknown>)[key];
+  }, body);
+}

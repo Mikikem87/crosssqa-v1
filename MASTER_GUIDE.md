@@ -152,13 +152,13 @@ Accessibility checks include:
 
 - axe scan on public and login pages
 - accessible names for form controls
-- real Tab-key navigation checks
+- real Tab/Shift+Tab navigation with recorded focus sequence
 - landmarks and heading structure
 - critical axe violations
-- optional component checks for skip links, live regions, and dialogs
+- configured skip-link, live-region announcement, dialog focus, and reduced-motion behavior
 
 This keeps the suite aligned with modern WCAG-focused quality expectations.
-The reduced-motion test verifies browser preference emulation only; it does not prove that every application animation responds to that preference.
+The reduced-motion test requires a configured probe and verifies its computed style changes under the emulated preference.
 
 ---
 
@@ -170,8 +170,8 @@ API tests validate:
 - list endpoint JSON array contract
 - existing and explicitly configured missing detail resources
 - unauthenticated rejection on a configured protected API route
-- configured pagination limits and actual sort order
-- opt-in CRUD lifecycle using a unique resource and cleanup
+- configured pagination limits, metadata, and actual sort order
+- opt-in, separate create/update/delete tests using per-test resources and cleanup
 - invalid payload rejection
 
 This reduces the risk of broken contracts and stale assumptions in server-side behavior.

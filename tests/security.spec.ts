@@ -19,10 +19,16 @@ test.describe('security baseline checks', () => {
 
     const rejected = status === 401 || status === 403;
     const redirectedToConfiguredLogin = currentPath === loginPath;
+    const protectedContent = config.protectedPage.protectedContentSelector
+      ? page.locator(config.protectedPage.protectedContentSelector)
+      : page.getByText(config.protectedPage.expectedTitleText ?? '', { exact: false });
     expect(
       rejected || redirectedToConfiguredLogin,
       `Expected 401/403 or redirect to ${loginPath}; received status ${status} at ${currentPath}`,
     ).toBeTruthy();
+    if (config.protectedPage.expectedTitleText || config.protectedPage.protectedContentSelector) {
+      await expect(protectedContent, 'Protected content must not be visible to an anonymous user').toHaveCount(0);
+    }
   });
 
   test('configured security route status contracts are met', async ({ page }) => {

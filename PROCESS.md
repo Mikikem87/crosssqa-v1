@@ -90,12 +90,12 @@ Run the accessibility checks next.
 Focus areas:
 - axe violations
 - form labels and accessible names
-- real Tab-key movement
+- real Tab/Shift+Tab movement and recorded focus sequence
 - page landmarks and headings
 - axe-detected contrast and semantic issues
-- optional component checks for skip links, live regions, and dialogs
+- configured skip-link activation, live-region announcements, dialog focus containment/restoration, and reduced-motion style checks
 
-The reduced-motion test only verifies that the browser preference can be emulated; verify application animation behavior separately where needed.
+The reduced-motion test requires an app-specific probe and verifies its computed CSS value changes under the emulated preference. Configure the selector and expected value for the actual app.
 
 ---
 
@@ -109,10 +109,10 @@ Focus areas:
 - detail endpoint behavior
 - create and update validation
 - delete behavior
-- configured pagination size and sorted order
+- configured pagination size, metadata, and sorted order
 - auth rejection on configured protected API routes
 - JSON shape validation
-- opt-in CRUD against a disposable environment only
+- separately isolated opt-in create/update/delete tests against a disposable environment only
 
 This stage answers: "Does the application contract behave as expected under valid and invalid inputs?"
 
